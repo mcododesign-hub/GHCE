@@ -459,6 +459,21 @@ check('鼠标位置进入运行时（页面坐标）', ptr.inside === true, ptr)
 const f5 = await shot('living-pointer');
 console.log('  screenshot:', f5);
 
+/* 10.4 按区域擦除（v0.11 的 clear-region，从已废弃的 verify-v011 套件搬过来） */
+const clearReg = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const cv = G.renderer.canvas, ctx = cv.getContext('2d');
+  const dpr = cv.width / G.doc.canvas.w;
+  G.renderer.draw();
+  G.renderer.clearRegion(0, 0, 200, 200);      // 页面坐标的左上角 200×200
+  const inside = [...ctx.getImageData(Math.round(20 * dpr), Math.round(20 * dpr), 1, 1).data];
+  const outside = [...ctx.getImageData(Math.round(700 * dpr), Math.round(500 * dpr), 1, 1).data];
+  G.renderer.draw();                            // 还原，后面的导出还用这张画布
+  return { inside, outside };
+})()`);
+check('clear-region 只擦指定区域（框内透明、框外保留底色）',
+  clearReg.inside[3] === 0 && clearReg.outside[3] > 0, clearReg);
+
 /* 10.5 位移轨 + 状态回传 */
 // 用"时间当自变量"扫一个完整周期，而不是隔 700ms 采两次 —— 后者会撞上正弦谷底，
 // 数值几乎不动，把正确的实现判成 FAIL（v0.16 踩过）。

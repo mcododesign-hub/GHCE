@@ -844,11 +844,13 @@ v0.15  Blueprint(Path,Count,Speed,Lifetime,Phase)     → Look(BP,Shape,Colour,W
 |---|---|
 | `dotnet build -c Release` | 0 错误 0 警告 |
 | `gh/probe`（安装后 .gha） | **RESULT: PASS**，16 只电池，`guids 23/23 唯一`，`track in patch: True` |
-| `mock/verify.mjs` | **48/48**（v0.16：时间轨 25 帧 / 缓动 33 点 / 生长按弧长截断；v0.17：PNG 序列 zip / 独立 HTML 离线跑 / WebM） |
+| `mock/verify.mjs` | **49/49**（v0.16：时间轨 25 帧 / 缓动 33 点 / 生长按弧长截断；v0.17：PNG 序列 zip / 独立 HTML 离线跑 / WebM；clear-region） |
+| `mock/verify-plugin-serve.mjs` | 7/7（插件自供页面 → 60 条路径入库并绘制，无控制台错误） |
 | `mock/verify-tween.mjs` | 18/18 |
+| `mock/verify-xform.mjs` | 16/16（v0.16 起改验时间轨 Duration/Loop/Ease，波形断言随 osc.js 删除） |
 | `mock/verify-v012.mjs` | 14/14 |
-| `mock/verify-v011.mjs` | 13/13 |
 | `mock/replay-csharp.mjs` | 15/15 |
+| ~~`mock/verify-v011.mjs`~~ | 已删除：它验的是 `Timeline.Field` 与 `Oscillator`，这两个东西在 v0.16 已经不存在了。`clear-region` 那条断言搬进了 `verify.mjs` |
 | 安装产物 | 194,560 bytes，md5 `69305A8CD466` |
 
 关键三条：

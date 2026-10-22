@@ -96,7 +96,8 @@ const got = await evaluate(`(() => {
       return i < 0 ? null : s.slice(i, s.indexOf(')', i) + 1);
     })(),
     entities: G.entities.stats.entities,
-    tracks: G.timeline.stats.tracks,
+    // v0.16：时间轨挂在指令上，不再有全局 timeline
+    tracks: [...G.doc.cmds.values()].filter((x) => x.track).length,
     reveal: G.doc.cmds.get('c_test') ? +G.doc.cmds.get('c_test').style.reveal.toFixed(3) : null,
     time: +G.clock.time.toFixed(2),
     drawn: G.renderer.lastDraw.drawn,

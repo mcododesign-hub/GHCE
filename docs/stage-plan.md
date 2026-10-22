@@ -143,7 +143,7 @@ Halftone / Image Sample / 纹理与笔触分层等。**当前判定：暂缓。*
 | B | 导出参数（fps / 时长） | ✅ v0.17 | HUD 两个数字输入；时长默认跟随最长轨道 |
 | C | 交付到仓库 | ✅ v0.17 | `github.com/mcododesign-hub/GHCE` |
 
-**验收**：`mock/verify.mjs` 48/48。其中三条是"真产物"级别的：
+**验收**：`mock/verify.mjs` 49/49。其中三条是"真产物"级别的：
 - PNG 序列 → zip 头 `504b0304`，3 帧 / 492 KB
 - 独立 HTML → 塞进 iframe 后画布上真有墨迹（`ink=5291`）；单独用 `file://` 打开也是 `cmds=8` 且无 `__bootError`
 - 视频 → `video/webm;codecs=vp9`，0.8 s / 592 KB

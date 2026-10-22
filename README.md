@@ -29,14 +29,14 @@ cd mock
 npm install        # 只一个依赖：ws
 npm run dev        # 5173 运行时页面 · 8777 模拟 GH 桥
 
-# 另开一个终端
-node mock/verify.mjs              # 真 Chrome 跑 38 项断言 + 出截图
+# 另开一个终端（必须显式把页面指到 mock 桥，否则会连到你开着的真 Rhino）
+RUNTIME=http://127.0.0.1:5173 PAGE="http://127.0.0.1:5173/index.html?ws=ws://127.0.0.1:8788/ghce" \
+  node mock/verify.mjs              # 真 Chrome 跑 49 项断言 + 出截图
 node mock/replay-csharp.mjs       # 把 C# 产出的 patch 灌进运行时（15 项）
 node mock/verify-plugin-serve.mjs # 插件自供页面 + 真浏览器渲染（7 项）
-node mock/verify-xform.mjs        # 矩阵插值与波形数学（15 项，纯 Node 不需浏览器）
-node mock/verify-tween.mjs        # 变换过渡：起点/插值/归位/restart/最短弧（11 项，纯 Node）
-node mock/verify-v011.mjs         # progress / 振荡器 / 事件 / 按区域擦除（13 项）
-node mock/verify-v012.mjs         # 逐指令 Xform 各自演 + 事件只影响目标指令（13 项）
+node mock/verify-xform.mjs        # 矩阵插值 + 时间轨取值（16 项，纯 Node 不需浏览器）
+node mock/verify-tween.mjs        # 变换过渡：起点/插值/归位/restart/最短弧（18 项，纯 Node）
+node mock/verify-v012.mjs         # 逐指令 Xform 各自演 + 事件只影响目标指令（14 项）
 ```
 
 GH 插件：
@@ -108,7 +108,7 @@ runtime/
 mock/
   mock-gh.mjs              模拟 GH 侧
   serve.mjs                零依赖静态服务器
-  verify.mjs               CDP 驱动的真浏览器验收（48 项）
+  verify.mjs               CDP 驱动的真浏览器验收（49 项）
   replay-csharp.mjs        把 C# PatchBuilder 的真实输出回放进运行时（15 项）
   verify-plugin-serve.mjs  插件自供页面 + 真浏览器渲染（7 项）
 gh/
@@ -136,6 +136,6 @@ gh/
 
 ## 边界
 
-- **C# 已编译（0 错误 / 0 警告），16 只电池在真 .NET 7 + 真 Grasshopper 程序集下实例化通过，产出的 patch 回放进运行时 15/15，插件自供页面 7/7，浏览器验收 48/48。** 还差两件只有你开 Rhino 才能验的事：GH 里的端到端联调、WebView2 预览窗口能否正常弹出。
+- **C# 已编译（0 错误 / 0 警告），16 只电池在真 .NET 7 + 真 Grasshopper 程序集下实例化通过，产出的 patch 回放进运行时 15/15，插件自供页面 7/7，浏览器验收 49/49。** 还差两件只有你开 Rhino 才能验的事：GH 里的端到端联调、WebView2 预览窗口能否正常弹出。
 - 构建细节（为什么不用 NuGet 包、PATH 里的 dotnet 没有 SDK、编译时踩到的错）全在 `gh/build.md`。
 - `mask`、`blend` 组、3D：协议留了位置，实现没做。阶段 4（Image Sample / Halftone）判定暂缓。

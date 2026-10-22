@@ -1,10 +1,12 @@
-// verify-xform.mjs — 纯 Node 断言：变换进度插值 + 振荡器波形
+// verify-xform.mjs — 纯 Node 断言：矩阵插值（TRS 分解）+ 时间轨取值
 //
 // 这两块都是"错了整张图就不对"的数学，但不需要浏览器。放在这里跑，秒级反馈。
 // 用法：node mock/verify-xform.mjs
+//
+// v0.16 起振荡器（osc.js）与波形表随预设一起删除，这里改成验时间轨：
+// 帧序列按 Duration / Loop / Ease 取到的插值必须和手算一致。
 
-import { resolveMatrix, decompose, compose, IDENTITY } from '../runtime/src/xform.js';
-import { waveValue, oscValue } from '../runtime/src/osc.js';
+import { resolveMatrix, decompose, compose, IDENTITY, trackU, resolveTrackMatrix, sampleEase } from '../runtime/src/xform.js';
 
 const results = [];
 const check = (name, pass, detail) => {
@@ -57,24 +59,37 @@ check('往返后参数不变形（rot/sx/sy 稳定）',
 
 /* ---------- 振荡器 ---------- */
 
+/* ---------- 时间轨：Duration / Loop / Ease ---------- */
+
 const tau = Math.PI * 2;
-check('sin 波形：相位 0 / π/2 / π', 
-  near(waveValue('sin', 0), 0) && near(waveValue('sin', tau / 4), 1) && near(waveValue('sin', tau / 2), 0, 1e-12),
-  [waveValue('sin', 0), waveValue('sin', tau / 4)]);
-check('tri 波形：相位 π/2 取 1，3π/2 取 −1',
-  near(waveValue('tri', Math.PI / 2), 1) && near(waveValue('tri', (3 * Math.PI) / 2), -1), null);
-check('saw 波形：0 → −1，半周期 → 0，四分之一 → −0.5',
-  near(waveValue('saw', 0), -1) && near(waveValue('saw', tau / 2), 0) && near(waveValue('saw', tau / 4), -0.5), null);
-check('square 波形：正半周 +1，负半周 −1',
-  waveValue('square', 0.1) === 1 && waveValue('square', Math.PI + 0.1) === -1, null);
+const shift = (dy) => [1, 0, 0, 1, 0, dy];
+// 3 帧：0 → 40 → 0，时长 2s
+const track = {
+  n: 3,
+  frames: Float32Array.from([...shift(0), ...shift(40), ...shift(0)]),
+  reveal: null,
+  duration: 2,
+  loop: true,
+  ease: null,
+};
 
-// 值 = 波形 × 幅度 + 中心
-const v = oscValue({ wave: 'sin', freq: 0.25, amp: 10, offset: 30, phase: 0 }, 1);
-// 0.25Hz → 周期 4s；t=1s 相位 π/2 → sin=1 → 10+30
-check('oscValue = 波形×幅度 + 中心（0.25Hz, t=1s）', near(v, 40, 1e-9), v);
-
-const v0 = oscValue({ wave: 'sin', freq: 0.25, amp: 10, offset: 30 }, 0);
-check('oscValue 的 Offset 就是摆动中心（相位 0 时回落 offset）', near(v0, 30, 1e-9), v0);
+check('轨道进度 = t/duration（不循环时间半程取 0.5）',
+  near(trackU({ ...track, loop: false }, 1), 0.5), trackU({ ...track, loop: false }, 1));
+check('循环轨道在 t=duration 时回到 0（不是 1）',
+  near(trackU(track, 2), 0), trackU(track, 2));
+check('t 取 mid-duration 时矩阵是两帧之间的插值（20 而不是 40）',
+  near(resolveTrackMatrix(track, 0.5)[5], 20, 1e-6), resolveTrackMatrix(track, 0.5)[5]);
+check('取到端点时就是原始帧（t=1s → 40）',
+  near(resolveTrackMatrix(track, 1)[5], 40, 1e-6), resolveTrackMatrix(track, 1)[5]);
+check('缓动表把线性进度掰弯（x=0.5 → y=0.75）',
+  near(sampleEase({ x: [0, 0.5, 1], y: [0, 0.75, 1] }, 0.5), 0.75), sampleEase({ x: [0, 0.5, 1], y: [0, 0.75, 1] }, 0.5));
+check('缓动表端点严格是 0 和 1',
+  sampleEase({ x: [0, 0.5, 1], y: [0, 0.75, 1] }, 0) === 0
+  && sampleEase({ x: [0, 0.5, 1], y: [0, 0.75, 1] }, 1) === 1, null);
+// 相位 0 那一刻必须精确等于第 0 帧，不能有"最小进度"之类的偏移
+check('t=0 时矩阵就是第 0 帧（严格）',
+  JSON.stringify(resolveTrackMatrix(track, 0)) === JSON.stringify([1, 0, 0, 1, 0, 0]),
+  resolveTrackMatrix(track, 0));
 
 const pass = results.filter(Boolean).length;
 console.log(`\n${pass}/${results.length} passed`);
