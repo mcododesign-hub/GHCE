@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <NoWarn>NETSDK1138</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup>
+    <!-- 与 GHCE.csproj 同一套探测：换机器不用改文件 -->
+    <_RhinoC1 Condition="'$(RhinoDir)' == '' AND Exists('C:\Program Files\Rhino 8\System\netcore\RhinoCommon.dll')">C:\Program Files\Rhino 8</_RhinoC1>
+    <_RhinoC2 Condition="'$(RhinoDir)' == '' AND Exists('D:\Program Files\Rhino 8\System\netcore\RhinoCommon.dll')">D:\Program Files\Rhino 8</_RhinoC2>
+    <_RhinoC3 Condition="'$(RhinoDir)' == '' AND Exists('E:\Program Files\Rhino 8\System\netcore\RhinoCommon.dll')">E:\Program Files\Rhino 8</_RhinoC3>
+    <_RhinoC4 Condition="'$(RhinoDir)' == '' AND Exists('$(ProgramW6432)\Rhino 8\System\netcore\RhinoCommon.dll')">$(ProgramW6432)\Rhino 8</_RhinoC4>
+    <_RhinoC5 Condition="'$(RhinoDir)' == '' AND Exists('$(ProgramFiles)\Rhino 8\System\netcore\RhinoCommon.dll')">$(ProgramFiles)\Rhino 8</_RhinoC5>
+    <RhinoDir Condition="'$(RhinoDir)' == ''">$(_RhinoC1)$(_RhinoC2)$(_RhinoC3)$(_RhinoC4)$(_RhinoC5)</RhinoDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Private=false：不把 GHCE.dll 复制到探针输出目录，
+         运行时仍由 Program.cs 的 LoadFrom 加载 gh/GHCE/bin 里那份"要发布的东西"。 -->
+    <ProjectReference Include="..\GHCE\GHCE.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="RhinoCommon">
+      <HintPath>$(RhinoDir)\System\netcore\RhinoCommon.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Grasshopper">
+      <HintPath>$(RhinoDir)\Plug-ins\Grasshopper\Grasshopper.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="GH_IO">
+      <HintPath>$(RhinoDir)\Plug-ins\Grasshopper\GH_IO.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+  <Target Name="CheckRhinoDir" BeforeTargets="PrepareForBuild" Condition="'$(RhinoDir)' == ''">
+    <Error Text="找不到 Rhino 8 的 .NET 7 程序集。请指定：dotnet build -c Release -p:RhinoDir=&quot;C:\Program Files\Rhino 8&quot;" />
+  </Target>
+</Project>

@@ -1,0 +1,22 @@
+# ---- 构建产物 ----
+gh/GHCE/bin/
+gh/GHCE/obj/
+gh/probe/bin/
+gh/probe/obj/
+**/bin/Release/
+**/bin/Debug/
+
+# ---- 依赖 ----
+node_modules/
+mock/node_modules/
+
+# ---- 本地工具与工作区数据（不随仓库分发）----
+.workbuddy/
+
+# ---- 编辑器 / 系统 ----
+.vs/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

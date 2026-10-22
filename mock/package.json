@@ -1,0 +1,15 @@
+{
+  "name": "ghce-dev",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GHCE 开发用模拟桥与静态服务器（无 Rhino 环境下的验收工具链）",
+  "scripts": {
+    "serve": "node serve.mjs",
+    "mock": "node mock-gh.mjs",
+    "dev": "node dev.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}
