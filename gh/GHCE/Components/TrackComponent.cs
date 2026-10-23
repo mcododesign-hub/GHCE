@@ -23,19 +23,19 @@ namespace GHCE.Components
         const int EASE_SAMPLES = 33;
 
         public TrackComponent()
-            : base("Track", "Track", "把一串变换当成一段动画：帧序列 + 时长 + 循环 + 缓动曲线", "GHCE", "Animation") { }
+            : base("Track", "Track", "Turns a series of transforms into a clip: frames, span, easing", "GHCE", "Animation") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000b1");
         protected override Bitmap Icon => Icons.Track;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "要动的指令（原样传进来）", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands to animate", GH_ParamAccess.list);
             var frames = new Grasshopper.Kernel.Parameters.Param_Transform
             {
                 Name = "Frames",
                 NickName = "F",
-                Description = "时间上的采样：每给一个 Transform 就是一帧。可选（只做生长时不用给）",
+                Description = "One Transform per frame. Optional when only reveal is animated",
                 Access = GH_ParamAccess.list,
                 Optional = true,
             };
@@ -45,29 +45,41 @@ namespace GHCE.Components
             {
                 Name = "Reveal",
                 NickName = "Rev",
-                Description = "每帧的 reveal（0..1），用于曲线生长。可选",
+                Description = "Reveal value per frame in 0..1. Optional",
                 Access = GH_ParamAccess.list,
                 Optional = true,
             };
             p.AddParameter(reveal);
 
+            // 入点 / 出点。用 GH 原生 Interval（Construct Domain 输出）：
+            // 一个端口表达两个数，比 Start+End 两个端口更 Grasshopper，也省一格。
+            var range = new Grasshopper.Kernel.Parameters.Param_Interval
+            {
+                Name = "Range",
+                NickName = "Range",
+                Description = "Start and end of this track on the global timeline, in seconds. Empty spans the whole duration",
+                Access = GH_ParamAccess.item,
+                Optional = true,
+            };
+            p.AddParameter(range);
+
             var ease = new Grasshopper.Kernel.Parameters.Param_Curve
             {
                 Name = "Ease",
                 NickName = "Ease",
-                Description = "缓动曲线：横轴 = 时间 0..1，纵轴 = 进度 0..1。不接 = 线性",
+                Description = "Easing curve: X is time 0..1, Y is progress 0..1. Empty means linear",
                 Access = GH_ParamAccess.item,
                 Optional = true,
             };
             p.AddParameter(ease);
 
-            p.AddNumberParameter("Duration", "Dur", "跑完一遍多少秒", GH_ParamAccess.item, 1.0);
-            p.AddBooleanParameter("Loop", "Loop", "播完是否从头再来", GH_ParamAccess.item, true);
+            p.AddBooleanParameter("Hidden", "Hide", "Mutes this track. Useful for isolating layers without disconnecting wires",
+                GH_ParamAccess.item, false);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "带时间轨的指令，接到 Render Output", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands carrying a track, feed into Render Output", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -78,26 +90,40 @@ namespace GHCE.Components
             if (!DA.GetDataList(0, cmds) || cmds.Count == 0) return;
             DA.GetDataList(1, frames);
             DA.GetDataList(2, reveals);
-            if (frames.Count < 2 && reveals.Count < 2)
+
+            // morph 模式下轨道只提供区间 —— 帧序列由 Morph 电池自带（cmd.morph）
+            bool hasMorph = false;
+            foreach (var gc in cmds) { if (gc?.Value?.Morph != null) { hasMorph = true; break; } }
+
+            if (frames.Count < 2 && reveals.Count < 2 && !hasMorph)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Frames 或 Reveal 至少要给 2 帧（一帧构不成动画）");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
+                    "Frames or Reveal needs at least 2 values. Morph supplies its own sequence");
                 return;
             }
 
+            // 入点 / 出点。Duration 与 Loop 不在这里 —— 归 Timeline 管。
+            Interval range = Interval.Unset;
             Curve easeCurve = null;
-            double duration = 1.0;
-            bool loop = true;
-            DA.GetData(3, ref easeCurve);
-            DA.GetData(4, ref duration);
-            DA.GetData(5, ref loop);
+            bool hidden = false;
+            DA.GetData(3, ref range);
+            DA.GetData(4, ref easeCurve);
+            DA.GetData(5, ref hidden);
 
-            if (duration <= 0) duration = 1.0;
+            double start = 0, end = -1;
+            if (range.IsValid && Math.Abs(range.T1 - range.T0) > 1e-9)
+            {
+                start = Math.Min(range.T0, range.T1);
+                end = Math.Max(range.T0, range.T1);
+                if (start < 0) start = 0;
+            }
 
             double[] easeX = null, easeY = null;
             if (easeCurve != null) SampleEase(easeCurve, out easeX, out easeY);
 
             // 每帧先取 6 个分量（未投影）—— 投影随每条指令的 P·M·P⁻¹ 走，所以逐指令合成
-            int n = Math.Max(frames.Count, reveals.Count);
+            // 至少取 2：morph 模式下 Frames 为空，轨道仍要作为"区间 + 缓动"发给运行时
+            int n = Math.Max(Math.Max(frames.Count, reveals.Count), 2);
             var raw = frames.Count >= 2 ? new double[n][] : null;
             if (raw != null)
             {
@@ -139,13 +165,19 @@ namespace GHCE.Components
                 }
 
                 var copy = src.Duplicate();
+                var prev = src.Track;
+
+                // 帧序列可能来自更上游（Draw Path 从 Transform 的矩阵帧转交过来）。
+                // 那种情况下 flat 为 null，必须沿用 prev —— 否则 Track 会把几何层的动画抹掉，
+                // 只剩一个"有区间没有内容"的空轨道。
                 copy.Track = new TrackDef
                 {
-                    N = n,
-                    Frames = flat,
-                    Reveal = revealSeq == null ? null : (double[])revealSeq.Clone(),
-                    Duration = duration,
-                    Loop = loop,
+                    N = flat != null ? n : (prev != null && prev.N >= 2 ? prev.N : n),
+                    Frames = flat ?? prev?.Frames,
+                    Reveal = revealSeq == null ? prev?.Reveal : (double[])revealSeq.Clone(),
+                    Start = start,
+                    End = end,
+                    Hidden = hidden,
                     EaseX = easeX,
                     EaseY = easeY,
                 };
@@ -154,7 +186,8 @@ namespace GHCE.Components
                 outCmds.Add(new GHCE_Command(copy));
             }
 
-            Message = $"{n} 帧 × {cmds.Count} 条 · {duration:0.##}s{(loop ? " ↻" : "")}{(revealSeq != null ? " · 生长" : "")}";
+            string span = end > start ? $"{start:0.##}–{end:0.##}s" : "full span";
+            Message = $"{n} frames x {cmds.Count} cmds · {span}{(hidden ? " · muted" : "")}{(revealSeq != null ? " · 生长" : "")}";
             DA.SetDataList(0, outCmds);
         }
 

@@ -1,22 +1,29 @@
 using System;
+using System.Linq;
+using System.Reflection;
 
 static class ProbeIcons
 {
-    /// <summary>
-    /// 只做定点类型查询。
-    /// 教训：Transform.Rotation / Point3d.Transform 在 Rhino 外会抛 DllNotFoundException（rhcommon_c）；
-    /// 而手搭 Identity 矩阵得到的坐标是 (0, 0.09) 这种不可信的垃圾值 —— 所以几何数值换算
-    /// 一律不在探针里验，必须在 Rhino 内验。
-    /// </summary>
     public static void Run()
     {
-        var asm = typeof(Grasshopper.Kernel.GH_DocumentObject).Assembly;
-        foreach (var name in new[]
+        Console.WriteLine("--- AppearanceSettings static props ---");
+        var t = typeof(Rhino.ApplicationSettings.AppearanceSettings);
+        foreach (var p in t.GetProperties(BindingFlags.Public | BindingFlags.Static))
+            Console.WriteLine($"  PROP {p.Name} : {p.PropertyType.Name}");
+
+        Console.WriteLine("--- ColorTheme enum ---");
+        var et = t.Assembly.GetType("Rhino.ApplicationSettings.ColorTheme");
+        Console.WriteLine("  exists: " + (et != null));
+        if (et != null)
+            foreach (var n in Enum.GetNames(et)) Console.WriteLine("    VAL " + n);
+
+        Console.WriteLine("--- GH_Skin statics ---");
+        var skin = typeof(Grasshopper.Kernel.GH_DocumentObject).Assembly.GetType("Grasshopper.GUI.GH_Skin");
+        Console.WriteLine("  exists: " + (skin != null));
+        if (skin != null)
         {
-            "Grasshopper.Kernel.Parameters.Param_Transform",
-            "Grasshopper.Kernel.Types.GH_Transform",
-        })
-            Console.WriteLine($"{name}: {(asm.GetType(name) != null ? "存在" : "不存在")}");
-        Console.WriteLine("Rhino.Geometry.Transform: " + typeof(Rhino.Geometry.Transform).FullName);
+            foreach (var f in skin.GetFields(BindingFlags.Public | BindingFlags.Static))
+                Console.WriteLine($"  FIELD {f.Name} : {f.FieldType.Name}");
+        }
     }
 }

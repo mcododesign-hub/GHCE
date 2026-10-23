@@ -25,6 +25,21 @@ namespace GHCE.Bridge
         public static double StepMs { get; private set; }
         public static double Time { get; private set; }
         public static string Keys { get; private set; } = "";
+
+        static readonly Dictionary<string, double> _signals = new Dictionary<string, double>();
+
+        /// <summary>Latest value the browser reported for a signal id. 0 when unknown.</summary>
+        public static double SignalValue(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return 0;
+            lock (_signals) return _signals.TryGetValue(id, out var v) ? v : 0;
+        }
+
+        public static bool HasSignal(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return false;
+            lock (_signals) return _signals.ContainsKey(id);
+        }
         public static DateTime At { get; private set; } = DateTime.MinValue;
 
         /// <summary>2 秒内收到过 stat 才算新鲜，否则说明窗口关了或断线</summary>
@@ -53,6 +68,19 @@ namespace GHCE.Bridge
                 StepMs = Num(r, "stepMs");
                 Time = Num(r, "time");
                 Keys = r.TryGetProperty("keys", out var k) && k.ValueKind == JsonValueKind.String ? k.GetString() : "";
+
+                if (r.TryGetProperty("signals", out var sg) && sg.ValueKind == JsonValueKind.Object)
+                {
+                    lock (_signals)
+                    {
+                        _signals.Clear();
+                        foreach (var prop in sg.EnumerateObject())
+                        {
+                            if (prop.Value.ValueKind == JsonValueKind.Number)
+                                _signals[prop.Name] = prop.Value.GetDouble();
+                        }
+                    }
+                }
                 At = DateTime.UtcNow;
             }
             catch

@@ -8,42 +8,49 @@ using GHCE.Types;
 namespace GHCE.Components
 {
     /// <summary>
-    /// Transform —— 指令 + 每个指令自己的 Xform，一一对应。
+    /// Transform —— 几何层的仿射变形，与 Morph 同级。
     ///
-    /// 语义（这是本电池唯一的语义）：
-    ///   Cmds 里第 i 条指令，配 Xform 里第 i 个 Transform。
-    ///   运行时拿到后**自己把这个变换演出来**：从它原来的位置/角度/缩放，
-    ///   在 duration 秒内变到 Xform 给出的状态。
-    ///   所以没有任何 progress 输入 —— 变换本身**就是**那段动画。
+    /// ```
+    /// Paths ──► Transform(Xform × N) ──► Paths(带矩阵帧序列) ──► Draw Path
+    /// ```
     ///
-    /// Xform 给 1 个 = 所有指令共用同一个；给 N 个 = 按序对应（多出来的指令沿用最后一个）。
+    /// 为什么输出 Paths 而不是 Commands：
+    ///   Transform 只回答"这条几何在时间上怎么变"，不关心它最后是粉色虚线还是绿色实线。
+    ///   样式是 Draw Path 的事。放在几何层才能和 Morph 并列，也才能串在同一条链上。
     ///
-    /// 坐标系说明（这是本电池存在的唯一理由）：
-    ///   Xform 定义在 **Rhino 世界坐标**里，而运行时画在 **页面坐标**里。
-    ///   两者之间隔着 Path Input 的相机映射 P：px = s*X + ox, py = -s*Y + oy。
-    ///   所以世界里的 M 要在页面上等价成立，必须是 P·M·P⁻¹ —— 不是 F·M·F⁻¹（只翻 Y）。
-    ///   只翻 Y 的版本会把"绕几何中心转"变成"绕页面原点转"，锚点偏出去几百像素，
-    ///   这就是你在画布上看到的"位置不对"。
+    /// 一个 Xform = 静态矩阵（走 transform.matrix，不建轨道）
+    /// 多个 Xform = 帧序列（走 track.frames，由 Track 给区间与缓动）
+    ///
+    /// 坐标：Xform 定义在 Rhino 世界坐标里，而 Path 已经是页面坐标，
+    /// 所以每个矩阵都要做 P·M·P⁻¹（P = 该 Path 的相机参数）。少了这步锚点会飞掉。
     /// </summary>
     public class TransformComponent : GH_Component
     {
         public TransformComponent()
-            : base("Transform", "PSR", "给每条指令配一个 Xform；浏览器把它们之间的变化演出来", "GHCE", "Drawing") { }
+            : base("Transform", "PSR", "Affine deformation at the geometry level. One Xform is static, many form a frame sequence",
+                   "GHCE", "Animation") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000ad");
         protected override Bitmap Icon => Icons.Transform;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "要变换的指令", GH_ParamAccess.list);
-            p.AddParameter(new Grasshopper.Kernel.Parameters.Param_Transform(), "Xform", "X",
-                "每个指令对应的 Transform（旋转/缩放/位移在里面合成好）。给 1 个则全部共用，给 N 个按序对应",
-                GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Path(), "Paths", "Paths", "Paths from Path Input or Morph", GH_ParamAccess.list);
+
+            var xf = new Grasshopper.Kernel.Parameters.Param_Transform
+            {
+                Name = "Xform",
+                NickName = "X",
+                Description = "1 Xform is a static matrix; N Xforms form a frame sequence in time order",
+                Access = GH_ParamAccess.list,
+                Optional = true,
+            };
+            p.AddParameter(xf);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "带变换的指令", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Path(), "Paths", "Paths", "Paths carrying a matrix, feed into Draw Path", GH_ParamAccess.list);
         }
 
         /// <summary>
@@ -56,8 +63,8 @@ namespace GHCE.Components
         ///   py' = −c·px + d·py + ( c·ox − d·oy − s·ty + oy)
         ///
         /// 把页面中心代进去可验证它是不动点 —— 这就是"绕自己中心转"落得住的充要条件。
-        /// 故意不碰任何 Rhino 类型：Transform / Point3d 在 Rhino 进程外不可信（会抛 rhcommon_c
-        /// 或给出半初始化的垃圾值），而这个函数必须能被离线数值验证。
+        /// 故意不碰任何 Rhino 类型：Transform / Point3d 在 Rhino 进程外不可信，
+        /// 而这个函数必须能被离线数值验证。
         /// </summary>
         internal static double[] ComposePageMatrix(
             double a, double b, double c, double d, double tx, double ty, double[] proj)
@@ -82,73 +89,77 @@ namespace GHCE.Components
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
-            var cmds = new List<GHCE_Command>();
-            if (!DA.GetDataList(0, cmds) || cmds.Count == 0) return;
+            var paths = new List<GHCE_Path>();
+            var frames = new List<RH.Transform>();
 
-            var xforms = new List<RH.Transform>();
-            if (!DA.GetDataList(1, xforms) || xforms.Count == 0)
+            if (!DA.GetDataList(0, paths) || paths.Count == 0) return;
+            DA.GetDataList(1, frames);
+
+            if (frames.Count == 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "缺少 Xform，指令原样输出");
-                DA.SetDataList(0, cmds);
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Missing Xform, paths pass through unchanged");
+                DA.SetDataList(0, paths);
                 return;
             }
 
-            // 1 个 xform 全体共用；N 个按序对应；不够的沿用最后一个（GH 的 longest-list 习惯）
-            if (xforms.Count > 1 && xforms.Count != cmds.Count)
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                    $"{cmds.Count} 条指令 × {xforms.Count} 个 Xform，按序对应，多出来的指令沿用最后一个");
-
-            var outCmds = new List<GHCE_Command>(cmds.Count);
-            int noProj = 0;
-            double lastRot = 0, lastK = 1;
-
-            for (int i = 0; i < cmds.Count; i++)
+            // 每个 Xform 先在世界坐标里解成仿射分量，再逐 Path 投影（各 Path 的相机可能不同）
+            int n = frames.Count;
+            var world = new double[n][];
+            for (int k = 0; k < n; k++)
             {
-                var src = cmds[i]?.Value;
+                var p0 = new RH.Point3d(0, 0, 0); p0.Transform(frames[k]);
+                var ex = new RH.Point3d(1, 0, 0); ex.Transform(frames[k]);
+                var ey = new RH.Point3d(0, 1, 0); ey.Transform(frames[k]);
+                world[k] = new[]
+                {
+                    ex.X - p0.X, ey.X - p0.X,     // a, b
+                    ex.Y - p0.Y, ey.Y - p0.Y,     // c, d
+                    p0.X, p0.Y,                   // tx, ty
+                };
+            }
+
+            var outPaths = new List<GHCE_Path>(paths.Count);
+            foreach (var gp in paths)
+            {
+                var src = gp?.Value;
                 if (src == null) continue;
 
-                var xf = xforms[Math.Min(i, xforms.Count - 1)];
-                if (xf.IsZero)
+                var copy = src.Duplicate();
+                var proj = src.Proj;
+
+                if (n == 1)
                 {
-                    outCmds.Add(new GHCE_Command(src.Duplicate()));
-                    continue;
+                    copy.Matrix = ComposePageMatrix(
+                        world[0][0], world[0][1], world[0][2], world[0][3], world[0][4], world[0][5], proj);
+                    copy.MatrixFrames = null;
+                    copy.MatrixN = 0;
+                }
+                else
+                {
+                    var flat = new double[n * 6];
+                    for (int k = 0; k < n; k++)
+                    {
+                        var m = ComposePageMatrix(
+                            world[k][0], world[k][1], world[k][2], world[k][3], world[k][4], world[k][5], proj);
+                        for (int i = 0; i < 6; i++) flat[k * 6 + i] = m[i];
+                    }
+                    copy.MatrixFrames = flat;
+                    copy.MatrixN = n;
+                    copy.Matrix = null;
                 }
 
-                // 用三个基点的像反推世界仿射分量，不依赖 Rhino 的矩阵行列布局约定
-                var p0 = new RH.Point3d(0, 0, 0); p0.Transform(xf);
-                var ex = new RH.Point3d(1, 0, 0); ex.Transform(xf);
-                var ey = new RH.Point3d(0, 1, 0); ey.Transform(xf);
-
-                double a = ex.X - p0.X, b = ey.X - p0.X;
-                double c = ex.Y - p0.Y, d = ey.Y - p0.Y;
-                double tx = p0.X, ty = p0.Y;
-
-                var proj = src.Path?.Proj;
-                if (proj == null) noProj++;
-
-                var copy = src.Duplicate();
-                copy.Matrix = ComposePageMatrix(a, b, c, d, tx, ty, proj);
-                // 终态就是 1；"从原位变过去"由运行时的 tween 负责，GH 不逐帧发包
-                copy.Progress = 1.0;
-                outCmds.Add(new GHCE_Command(copy));
-
-                double det = a * d - b * c;
-                lastRot = Math.Atan2(c, a) * 180.0 / Math.PI;
-                lastK = Math.Sqrt(Math.Abs(det));
+                outPaths.Add(new GHCE_Path(copy));
             }
 
-            if (noProj > 0)
-            {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                    $"{noProj} 条指令没有相机信息，只能纠 Y 轴朝向，绕中心旋转的锚点会偏。" +
-                    "指令的 Path 来自 Path Input 时会自带相机参数。");
-            }
+            // Message 只给能判读的信息：分解出的旋转/缩放比六个数字有用得多
+            double det = world[0][0] * world[0][3] - world[0][1] * world[0][2];
+            double rot = Math.Atan2(world[0][2], world[0][0]) * 180.0 / Math.PI;
+            double k2 = Math.Sqrt(Math.Abs(det));
+            Message = n == 1
+                ? $"static · rotation {rot:0.#}° · scale {k2:0.###}"
+                : $"{n} frames · rotation {rot:0.#}° to {Math.Atan2(world[n - 1][2], world[n - 1][0]) * 180.0 / Math.PI:0.#}°";
 
-            // Message 只给能判读的信息：旋转 / 缩放比矩阵六个数有用得多
-            Message = (xforms.Count > 1 ? $"{xforms.Count} Xform · " : "")
-                      + $"转 {lastRot:0.#}° · 缩放 {lastK:0.###}";
-
-            DA.SetDataList(0, outCmds);
+            DA.SetDataList(0, outPaths);
         }
     }
 }

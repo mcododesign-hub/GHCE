@@ -1,6 +1,6 @@
 // main.js — 运行时装配：文档状态 → 渲染器 → 桥
 import { Doc } from './doc.js';
-import { Renderer2D } from './renderer2d.js';
+import { Renderer2D, recolor } from './renderer2d.js';
 import { BridgeClient } from './bridge-client.js';
 import { EntitySystem } from './entity.js';
 import { Clock } from './clock.js';
@@ -8,7 +8,10 @@ import { Pointer } from './pointer.js';
 import { EventTriggers } from './events.js';
 import { Tweens } from './tween.js';
 import { toSVG } from './svg.js';
-import { resolveTrackMatrix, resolveTrackReveal, trackU } from './xform.js';
+import { resolveTrackMatrix, resolveTrackReveal, resolveMorph, trackU } from './xform.js';
+import { signalValue, signalSnapshot } from './signal.js';
+import { evalExpr } from './expr.js';
+import { Scene3D } from './scene3d.js';
 import {
   exportPngSequence, exportStandalone, exportVideo,
   trackDuration, pickVideoMime, videoExt,
@@ -17,6 +20,9 @@ import {
 const WS_URL = new URLSearchParams(location.search).get('ws') || 'ws://127.0.0.1:8777/ghce';
 
 const doc = new Doc();
+// 信号定义表：GH 每帧推一次（约 100 字节），这里按 id 覆盖。
+// 无状态设计 —— GH 侧删掉电池就不用清理，只是不再有人推这个 id。
+const signals = new Map();
 const entities = new EntitySystem();
 const clock = new Clock();
 const pointer = new Pointer();
@@ -24,6 +30,8 @@ const pointer = new Pointer();
 const tweens = new Tweens();
 const stage = document.getElementById('stage-inner');
 const renderer = new Renderer2D(stage);
+// 三维是独立的一层：独立 canvas、独立渲染循环，与二维互不驱动
+const scene3d = new Scene3D(document.getElementById('layer-3d'));
 renderer.setDoc(doc);
 renderer.setEntitySystem(entities);
 entities.setPointer(pointer);
@@ -34,19 +42,10 @@ events.bind(renderer.canvas);
 
 const el = {
   dot: document.getElementById('dot'),
-  conn: document.getElementById('k-conn'),
-  rev: document.getElementById('k-rev'),
-  count: document.getElementById('k-count'),
-  patch: document.getElementById('k-patch'),
-  ops: document.getElementById('k-ops'),
-  draw: document.getElementById('k-draw'),
-  ent: document.getElementById('k-ent'),
-  time: document.getElementById('k-time'),
-  ptr: document.getElementById('k-ptr'),
-  play: document.getElementById('btn-play'),
-  fps: document.getElementById('k-fps'),
+  dev: document.getElementById('dev'),
+  line: document.getElementById('dev-line'),
   errs: document.getElementById('errs'),
-  hud: document.getElementById('hud'),
+  toast: document.getElementById('toast'),
 };
 
 let dirty = true;
@@ -91,6 +90,10 @@ function tick(now) {
   const tweenTouched = tweens.update(doc);
   if (steps > 0 || tweenTouched) dirty = true;
   if (doc.time !== undefined && hasTracks(doc)) dirty = true;   // 有轨道就每帧都要重画
+  // 表达式绑定：依赖时间的每帧重画；只读变量的由事件写变量时置脏。
+  // 少了这两行，画面会"数值在变、画面不动" —— 这是绑定类功能最典型的一个坑。
+  if (doc.timeBinding) dirty = true;
+  if (doc.varsDirty) { dirty = true; doc.varsDirty = false; }
   // 残影 / 累积模式下画面永远在变，必须逐帧重绘
   if ((doc.canvas.clearMode || 'clear') !== 'clear') dirty = true;
 
@@ -103,10 +106,13 @@ function tick(now) {
     clock.frame++;
     drawCount++;
   }
+  // 3D 自己判断要不要画（无变化且无帧序列时直接返回 0）
+  scene3d.render(dt);
+
   if (now - fpsT0 >= 500) {
     fps = (drawCount * 1000) / (now - fpsT0);
     drawCount = 0; fpsT0 = now;
-    updateHud();
+    updateDev();
   }
   sendStat(dt);
 }
@@ -115,7 +121,7 @@ function tick(now) {
 let statAcc = 0;
 function sendStat(dt) {
   statAcc += dt;
-  if (statAcc < 0.2) return;
+  if (statAcc < 0.1) return;
   statAcc = 0;
   if (client.state !== 'open') return;
   client.metrics.statSent++;
@@ -135,56 +141,85 @@ function sendStat(dt) {
     drawMs: +renderer.lastDraw.ms.toFixed(2),
     stepMs: +es.stepMs.toFixed(2),
     time: +clock.time.toFixed(2),
+    signals: signalSnapshot(signals, clock.time),
   });
 }
 
-// ---------- HUD ----------
+// ---------- 开发面板 ----------
+//
+// 运行时默认只有画面，没有常驻 UI：面板会挤压画布、周期性写 DOM，
+// 而且它展示的东西对"作品长什么样"没有帮助。要看诊断信息就按 H。
+//
+// 关闭时**一次 DOM 写入都不做** —— 面板隐藏还每 500ms 刷文本，
+// 是无意义的布局抖动，也是"画面为什么会闪"的常见来源。
+const devOpen = () => !!el.dev && !el.dev.hidden;
+
 function fmtBytes(n) {
   if (!n) return '—';
   return n > 1024 ? (n / 1024).toFixed(1) + ' KB' : n + ' B';
 }
-function updateHud() {
+
+function updateDev() {
+  if (!devOpen()) return;
   const c = client;
-  el.conn.textContent = c.state;
-  el.dot.className = 'dot ' + c.state;
-  el.rev.textContent = doc.rev < 0 ? '—' : doc.rev;
   const s = doc.stats();
-  el.count.textContent = `${s.geoms} / ${s.cmds}`;
-  el.patch.textContent = c.metrics.patches ? `${c.metrics.lastPatchMs.toFixed(2)} ms` : '—';
-  el.ops.textContent = c.metrics.patches ? `${c.metrics.lastOps} / ${fmtBytes(c.metrics.lastBytes)}` : '—';
-  const d = renderer.lastDraw;
-  el.draw.textContent = `${d.ms.toFixed(2)} ms · ${d.drawn}${d.skipped ? ' / 跳过' + d.skipped : ''}`;
-  el.fps.textContent = fps ? fps.toFixed(1) + ' fps' : '—';
-  const es = entities.stats;
-  if (el.ent) {
-    el.ent.textContent = es.entities
-      ? `${es.entities} · ${es.stepMs.toFixed(2)} ms`
-      : '—';
-  }
-  if (el.time) {
-    el.time.textContent = `${clock.time.toFixed(2)}s${clock.playing ? '' : ' · 暂停'}`;
-  }
-  if (el.ptr) {
-    const ps = pointer.stats();
-    el.ptr.textContent = ps.inside ? `${ps.x}, ${ps.y}${ps.down ? ' ↓' : ''}` : '—';
-  }
+  el.dot.className = 'dot ' + c.state;
+  el.line.textContent = [
+    c.state,
+    `rev ${doc.rev < 0 ? '—' : doc.rev}`,
+    `${s.geoms}/${s.cmds}`,
+    c.metrics.patches ? fmtBytes(c.metrics.lastBytes) : '—',
+    fps ? `${fps.toFixed(0)}fps` : '',
+  ].filter(Boolean).join(' · ');
 }
 
-// 三种"重置"是不同的事（任务书 3E）：时间、对象状态、画布内容，不能混成一个按钮
-function syncPlayButton() {
-  if (el.play) el.play.textContent = clock.playing ? '暂停' : '播放';
+function toggleDev(force) {
+  if (!el.dev) return;
+  el.dev.hidden = force == null ? !el.dev.hidden : !force;
+  if (devOpen()) updateDev();
 }
 
 const errQueue = [];
+let toastTimer = 0;
 function pushErr(e) {
   errQueue.push(e);
   while (errQueue.length > 6) errQueue.shift();
-  el.errs.textContent = errQueue.map((x) => `[${x.code || 'ERR'}] ${x.msg || ''}`).join('\n');
+  if (el.errs) el.errs.textContent = errQueue.map((x) => `[${x.code || 'ERR'}] ${x.msg || ''}`).join('\n');
+  // 出错时浮一条，4 秒后自己消失 —— 正常播放时画面上一个字都没有
+  if (el.toast) {
+    el.toast.textContent = `${e.code || 'ERR'} · ${e.msg || ''}`;
+    el.toast.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.toast.classList.remove('on'), 4000);
+  }
 }
+
+// ---------- 3D ----------
+
+const is3DOp = (o) =>
+  o && (o.op.startsWith('mesh.') || o.op.startsWith('cmd3d.') || o.op.startsWith('scene3d.'));
 
 // ---------- 桥 ----------
 const client = new BridgeClient(WS_URL, {
+  onSignal(msg) {
+    if (!msg || !msg.id) return;
+    signals.set(msg.id, {
+      kind: msg.kind || 'noise1',
+      seed: Number(msg.seed) | 0,
+      rate: Number(msg.rate) > 0 ? Number(msg.rate) : 1,
+      args: Array.isArray(msg.args) ? msg.args.slice(0, 3).map(Number) : [],
+    });
+  },
+
   onPatch(patch) {
+    // 3D 的 op 不进 Doc：Doc 只管二维的静态表，跟实体一样由各自的系统消费。
+    let ops = patch.ops || [];
+    if (ops.some(is3DOp)) {
+      scene3d.applyOps(ops.filter(is3DOp));
+      ops = ops.filter((o) => !is3DOp(o));
+      patch = { ...patch, ops };
+    }
+
     const res = doc.apply(patch);
     if (res.entityOps.length) entities.applyOps(res.entityOps, doc);
     if (res.eventOps.length) events.applyOps(res.eventOps);
@@ -210,7 +245,7 @@ const client = new BridgeClient(WS_URL, {
   onStatus(s, extra) {
     if (s === 'retry') pushErr({ code: 'RETRY', msg: `${extra?.wait | 0}ms 后重连 ${WS_URL}` });
     if (s === 'open') applyHarnessMode(!!(extra && extra.mock));
-    updateHud();
+    updateDev();
   },
   onError(e) { pushErr(e); },
 });
@@ -226,12 +261,12 @@ function selectScene(name) {
   requestDraw();
 }
 
-// 演示场景按钮只在模拟桥下有意义；接真 GH 时藏起来，免得点了没反应
+// 演示场景只在模拟桥下有意义；接真 GH 时整行藏掉，免得点了没反应
+let mockMode = false;
 function applyHarnessMode(isMock) {
+  mockMode = isMock;
   const scenes = document.getElementById('scenes');
-  const label = document.getElementById('scenes-label');
   if (scenes) scenes.classList.toggle('hidden', !isMock);
-  if (label) label.classList.toggle('hidden', !isMock);
 }
 
 function download(blob, name) {
@@ -327,29 +362,29 @@ document.getElementById('btn-video')?.addEventListener('click', () => withExport
   return r;
 }));
 
-addEventListener('resize', requestDraw);
+addEventListener('resize', () => {
+  requestDraw();
+  scene3d.resize(stage.clientWidth, stage.clientHeight);
+});
 
-// ---------- 播放控制（阶段 3 A / E）----------
-el.play?.addEventListener('click', () => { clock.toggle(); syncPlayButton(); requestDraw(); });
-document.getElementById('btn-reset-time')?.addEventListener('click', () => { clock.reset(); requestDraw(); });
-document.getElementById('btn-restart')?.addEventListener('click', () => { entities.restart(); requestDraw(); });
-document.getElementById('btn-clear')?.addEventListener('click', () => { renderer.clear(); requestDraw(); });
-syncPlayButton();
+// ---------- 播放控制 ----------
+//
+// 运行时不再内置播放按钮：暂停 / 重置 / 重启 / 清屏都是"作品规则"，
+// 应该由 GH 的 Event Trigger 定义（toggle-play / reset-time / restart / clear），
+// 而不是由运行时替使用者决定面板上该有哪几个键。
+// 键盘同样不拦截空格与数字 —— 那会和用户定义的 key 事件抢同一个键。
+el.dev?.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'dev-close') toggleDev(false);
+});
 
 addEventListener('keydown', (e) => {
-  if (e.key === 'h' || e.key === 'H') {
-    el.hud.classList.toggle('hidden');
-    document.body.classList.toggle('hud-hidden', el.hud.classList.contains('hidden'));
-    requestDraw();
-  }
+  if (e.key === 'h' || e.key === 'H') toggleDev();
+  // 下面这些只在模拟桥（开发环境）里生效：接真 GH 时连这层键盘都不存在，
+  // 免得和作品自己定义的 key 事件抢键。
+  if (!mockMode) return;
+  const scenes = { '1': 'static', '2': 'mutate', '3': 'stress', '4': 'entities', '5': 'living', '6': 'morph', '7': 'random', '8': 'scene3d' };
+  if (scenes[e.key]) { selectScene(scenes[e.key]); return; }
   if (e.key === 'r' || e.key === 'R') { client.close(); client.connect(); }
-  if (e.key === ' ') { e.preventDefault(); clock.toggle(); syncPlayButton(); requestDraw(); }
-  if (e.key === '0') { clock.reset(); requestDraw(); }
-  if (e.key === '1') selectScene('static');
-  if (e.key === '2') selectScene('mutate');
-  if (e.key === '3') selectScene('stress');
-  if (e.key === '4') selectScene('entities');
-  if (e.key === '5') selectScene('living');
 });
 
 client.connect();
@@ -360,7 +395,8 @@ requestAnimationFrame(loop);
 
 // 调试与自动化验收入口
 window.GHCE = {
-  doc, renderer, client, entities, clock, pointer, tweens, events, toSVG, selectScene, requestDraw,
+  doc, renderer, scene3d, client, entities, clock, pointer, tweens, events, toSVG, selectScene, requestDraw, resolveMorph,
+  signals, signalValue, evalExpr, recolor,
 
   // v0.17 导出（验收直接调这几个，不用去点按钮）
   exportPngSequence, exportStandalone, exportVideo, trackDuration, pickVideoMime, videoExt,
@@ -371,9 +407,9 @@ window.GHCE = {
     if (!c || !c.track) return null;
     const t = time == null ? clock.time : time;
     return {
-      u: trackU(c.track, t),
-      reveal: resolveTrackReveal(c.track, t),
-      matrix: resolveTrackMatrix(c.track, t),
+      u: trackU(c.track, t, doc.timeline),
+      reveal: resolveTrackReveal(c.track, t, doc.timeline),
+      matrix: resolveTrackMatrix(c.track, t, doc.timeline),
     };
   },
 };

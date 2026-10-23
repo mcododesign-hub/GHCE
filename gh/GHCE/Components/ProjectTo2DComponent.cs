@@ -21,27 +21,27 @@ namespace GHCE.Components
     public class ProjectTo2DComponent : GH_Component
     {
         public ProjectTo2DComponent()
-            : base("Project to 2D", "Cam", "曲线包围盒 → 相机（世界坐标 → 页面坐标）", "GHCE", "Drawing") { }
+            : base("Project to 2D", "Cam", "Curve bounds to camera: world space to page space", "GHCE", "Drawing") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000e1");
         protected override Bitmap Icon => Icons.ProjectTo2D;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddCurveParameter("Geometry", "Geo", "参与拟合的曲线（通常是整个作品的全部曲线）", GH_ParamAccess.list);
-            p.AddIntegerParameter("Page Width", "W", "页面宽（像素）", GH_ParamAccess.item, 1440);
-            p.AddIntegerParameter("Page Height", "H", "页面高（像素）", GH_ParamAccess.item, 900);
-            p.AddNumberParameter("Margin", "M", "页面内边距（像素）", GH_ParamAccess.item, 60.0);
-            p.AddNumberParameter("Scale", "S", "0 = 按包围盒自动拟合；> 0 = 固定缩放（动画全程共用一套框）", GH_ParamAccess.item, 0.0);
+            p.AddCurveParameter("Geometry", "Geo", "Curves included in the fit. Usually every curve in the artwork", GH_ParamAccess.list);
+            p.AddIntegerParameter("Page Width", "W", "Page width in pixels", GH_ParamAccess.item, 1440);
+            p.AddIntegerParameter("Page Height", "H", "Page height in pixels", GH_ParamAccess.item, 900);
+            p.AddNumberParameter("Margin", "M", "Page margin in pixels", GH_ParamAccess.item, 60.0);
+            p.AddNumberParameter("Scale", "S", "0 = fit to the bounding box; greater than 0 = fixed scale shared by the whole animation", GH_ParamAccess.item, 0.0);
             p.AddParameter(new Param_Rectangle(), "Bounds", "Bounds",
-                "可选：显式世界包围盒。接动画全程的外接矩形，相机就不会被单帧几何带跑", GH_ParamAccess.item);
+                "Optional explicit world bounds. Use the extent of the entire animation so the camera does not drift with single frames", GH_ParamAccess.item);
             p[5].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Camera(), "Camera", "Cam", "相机（接到 Path Input 的 Camera 口）", GH_ParamAccess.item);
-            p.AddTextParameter("Info", "Info", "拟合统计", GH_ParamAccess.item);
+            p.AddParameter(new Param_GHCE_Camera(), "Camera", "Cam", "Camera for the Camera input of Path Input", GH_ParamAccess.item);
+            p.AddTextParameter("Info", "Info", "Fit summary", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -58,7 +58,7 @@ namespace GHCE.Components
 
             if (pw <= 0 || ph <= 0)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "页面尺寸必须为正");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Page size must be positive");
                 return;
             }
 
@@ -93,7 +93,7 @@ namespace GHCE.Components
                     // 不接几何也允许：这时它就是一台"按页面尺寸 + 单位框"的相机。
                     // 用 Remark 而不是 Warning —— 否则"只想定页面尺寸"的用法会一直挂着黄标。
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Remark,
-                        "没有几何也没有 Bounds：按 0..1 单位框拟合。想固定取景请接 Bounds 或全部曲线");
+                        "No geometry and no Bounds: fitting to a 0..1 unit box. Connect Bounds or all curves to lock the frame");
                     box = new double[] { 0, 0, 1, 1 };
                 }
                 else
@@ -108,9 +108,9 @@ namespace GHCE.Components
 
             DA.SetData(0, new GHCE_Camera(cam));
 
-            string mode = scale > 0 ? "固定" : "拟合";
+            string mode = scale > 0 ? "fixed" : "fit";
             DA.SetData(1, $"{pw}×{ph} · s {proj[0]:0.###} · {mode}"
-                + (fromBounds ? " · 用 Bounds" : "")
+                + (fromBounds ? " · bounds" : "")
                 + $" · bbox ({box[0]:0.#},{box[1]:0.#})–({box[2]:0.#},{box[3]:0.#})");
         }
     }

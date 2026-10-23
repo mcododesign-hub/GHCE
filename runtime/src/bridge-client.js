@@ -2,11 +2,12 @@
 // 职责边界：只管传输、重连、回执；不解析文档语义
 
 export class BridgeClient {
-  constructor(url, { onPatch, onStatus, onError } = {}) {
+  constructor(url, { onPatch, onStatus, onError, onSignal } = {}) {
     this.url = url;
     this.onPatch = onPatch || (() => {});
     this.onStatus = onStatus || (() => {});
     this.onError = onError || (() => {});
+    this.onSignal = onSignal || (() => {});
     this.ws = null;
     this.state = 'idle';
     this.seq = 0;
@@ -60,6 +61,8 @@ export class BridgeClient {
         this._send({ v: '0.1', t: 'ack', seq: ++this.seq, rev: this.appliedRev, ms: +this.metrics.lastPatchMs.toFixed(2), rejected: res.rejected || 0 });
       } else if (msg.t === 'error') {
         this.onError(msg);
+      } else if (msg.t === 'signal') {
+        this.onSignal?.(msg);
       } else if (msg.t === 'pong') {
         this.metrics.rtt = performance.now() - (this._pongAt || performance.now());
       } else if (msg.t === 'welcome') {

@@ -19,24 +19,24 @@ namespace GHCE.Components
     public class LayerComponent : GH_Component
     {
         public LayerComponent()
-            : base("Layer", "Layer", "把指令收进显式图层（顺序 / 不透明度 / 混合模式）", "GHCE", "Drawing") { }
+            : base("Layer", "Layer", "Assigns commands to an explicit layer", "GHCE", "Drawing") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000e2");
         protected override Bitmap Icon => Icons.Layer;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "待归层的绘图指令", GH_ParamAccess.list);
-            p.AddTextParameter("Name", "Name", "图层名（同名归为一层）", GH_ParamAccess.item, "main");
-            p.AddNumberParameter("Order", "Order", "图层顺序：小的在下。负数可以插到默认图层之下", GH_ParamAccess.item, 0.0);
-            p.AddNumberParameter("Opacity", "Opacity", "整层不透明度 0-1（与指令自身的 opacity 相乘）", GH_ParamAccess.item, 1.0);
-            p.AddTextParameter("Blend", "Blend", "混合模式：source-over / multiply / screen / overlay / lighter / difference …（留空为 source-over）", GH_ParamAccess.item, "source-over");
-            p.AddBooleanParameter("Visible", "On", "整层可见性", GH_ParamAccess.item, true);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands to assign", GH_ParamAccess.list);
+            p.AddTextParameter("Name", "Name", "Layer name. Same name shares one layer", GH_ParamAccess.item, "main");
+            p.AddNumberParameter("Order", "Order", "Layer order: lower draws first. Negative values go beneath default layers", GH_ParamAccess.item, 0.0);
+            p.AddNumberParameter("Opacity", "Opacity", "Layer alpha 0-1, multiplied with per-command opacity", GH_ParamAccess.item, 1.0);
+            p.AddTextParameter("Blend", "Blend", "Blend mode: source-over, multiply, screen, overlay, lighter, difference and more. Empty means source-over", GH_ParamAccess.item, "source-over");
+            p.AddBooleanParameter("Visible", "On", "Layer visibility", GH_ParamAccess.item, true);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "带图层定义的新指令（原指令不被改写）", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "New commands carrying the layer definition", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -66,7 +66,7 @@ namespace GHCE.Components
             if (!def.BlendIsKnown(blend))
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                    $"不认识的混合模式 \"{blend}\"，已回退 source-over。可用：{string.Join(" / ", LayerDef.Blends)}");
+                    $"Unknown blend mode \"{blend}\", fell back to source-over. Valid values: {string.Join(" / ", LayerDef.Blends)}");
             }
 
             var outCmds = new List<GHCE_Command>(cmds.Count);

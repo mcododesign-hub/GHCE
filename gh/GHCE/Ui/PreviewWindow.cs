@@ -30,7 +30,22 @@ namespace GHCE.Ui
             LastError = null;
             try
             {
-                Rhino.RhinoApp.InvokeOnUiThread(new Action(() => OpenCore(url)));
+                // 必须用 BeginInvoke（投递即返回），不能用 InvokeOnUiThread（同步等待）。
+                //
+                // 死锁链条：GH 在后台线程求解 → SolveInstance 里调 Open → InvokeOnUiThread 阻塞等 UI 线程
+                //           → UI 线程此刻正等着这次求解完成 → 两边互等，界面停在一半。
+                // 这就是"打开文档卡死"的成因。BeginInvoke 把开窗排到 UI 队列末尾，求解先返回，窗口随后出现。
+                var app = System.Windows.Application.Current;
+                if (app?.Dispatcher != null)
+                {
+                    app.Dispatcher.BeginInvoke(
+                        new Action(() => OpenCore(url)),
+                        System.Windows.Threading.DispatcherPriority.Background);
+                }
+                else
+                {
+                    Rhino.RhinoApp.InvokeOnUiThread(new Action(() => OpenCore(url)));
+                }
             }
             catch (Exception ex)
             {
@@ -42,14 +57,22 @@ namespace GHCE.Ui
         {
             var w = _win;
             if (w == null) return;
+            // 先断开引用，再异步关窗：重复调用不会重复排队
+            _win = null;
+            _view = null;
             try
             {
-                Rhino.RhinoApp.InvokeOnUiThread(new Action(() =>
+                var app = System.Windows.Application.Current;
+                if (app?.Dispatcher != null)
                 {
-                    try { w.Close(); } catch { }
-                    _win = null;
-                    _view = null;
-                }));
+                    app.Dispatcher.BeginInvoke(
+                        new Action(() => { try { w.Close(); } catch { } }),
+                        System.Windows.Threading.DispatcherPriority.Background);
+                }
+                else
+                {
+                    Rhino.RhinoApp.InvokeOnUiThread(new Action(() => { try { w.Close(); } catch { } }));
+                }
             }
             catch { }
         }
@@ -125,18 +148,18 @@ namespace GHCE.Ui
             LastError = ex.GetType().Name + ": " + ex.Message;
             try
             {
-                Rhino.RhinoApp.WriteLine("[GHCE] preview window failed: " + LastError + " → 改用系统浏览器");
+                Rhino.RhinoApp.WriteLine("[GHCE] preview window failed: " + LastError + " Switched to the system browser");
             }
             catch { }
 
             try
             {
                 Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-                LastError += "（已改用系统浏览器打开）";
+                LastError += "Opened in the system browser instead";
             }
             catch (Exception ex2)
             {
-                LastError += "，降级也失败：" + ex2.Message;
+                LastError += ". Fallback also failed: " + ex2.Message;
             }
 
             try { _win?.Close(); } catch { }

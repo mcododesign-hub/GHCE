@@ -15,23 +15,23 @@ namespace GHCE.Components
     public class DrawPathComponent : GH_Component
     {
         public DrawPathComponent()
-            : base("Draw Path", "Draw", "路径 + 样式 → Draw Command", "GHCE", "Drawing") { }
+            : base("Draw Path", "Draw", "Paths plus style to draw commands", "GHCE", "Drawing") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000a3");
         protected override Bitmap Icon => Icons.DrawPath;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Path(), "Paths", "Paths", "来自 Path Input 的路径", GH_ParamAccess.list);
-            p.AddTextParameter("Layer", "Layer", "图层名（同名归为一层）", GH_ParamAccess.item, "main");
-            p.AddIntegerParameter("Order", "Order", "层内绘制顺序，从 0 开始", GH_ParamAccess.item, 0);
-            p.AddColourParameter("Stroke", "Stroke", "描边颜色", GH_ParamAccess.item, Color.FromArgb(232, 230, 223));
-            p.AddNumberParameter("Width", "Width", "线宽（像素）", GH_ParamAccess.item, 1.0);
-            p.AddNumberParameter("Alpha", "Alpha", "描边不透明度 0-1", GH_ParamAccess.item, 1.0);
-            p.AddTextParameter("Dash", "Dash", "虚线，如 4,3；留空为实线", GH_ParamAccess.item);
-            p.AddColourParameter("Fill", "Fill", "填充颜色（不接则不填充）", GH_ParamAccess.item);
-            p.AddNumberParameter("Fill Alpha", "FA", "填充不透明度", GH_ParamAccess.item, 1.0);
-            p.AddNumberParameter("Opacity", "Opacity", "整条指令的不透明度", GH_ParamAccess.item, 1.0);
+            p.AddParameter(new Param_GHCE_Path(), "Paths", "Paths", "Paths from Path Input, Morph or Transform", GH_ParamAccess.list);
+            p.AddTextParameter("Layer", "Layer", "Layer name. Same name shares one layer", GH_ParamAccess.item, "main");
+            p.AddIntegerParameter("Order", "Order", "Draw order within the layer, starting at 0", GH_ParamAccess.item, 0);
+            p.AddColourParameter("Stroke", "Stroke", "Stroke color", GH_ParamAccess.item, Color.FromArgb(232, 230, 223));
+            p.AddNumberParameter("Width", "Width", "Stroke width in pixels", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Alpha", "Alpha", "Stroke alpha, 0-1", GH_ParamAccess.item, 1.0);
+            p.AddTextParameter("Dash", "Dash", "Dash pattern, e.g. 4,3. Empty means solid", GH_ParamAccess.item);
+            p.AddColourParameter("Fill", "Fill", "Fill color. Leave empty for no fill", GH_ParamAccess.item);
+            p.AddNumberParameter("Fill Alpha", "FA", "Fill alpha", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Opacity", "Opacity", "Overall command opacity", GH_ParamAccess.item, 1.0);
 
             p[6].Optional = true;
             p[7].Optional = true;
@@ -39,7 +39,7 @@ namespace GHCE.Components
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "绘图指令", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Draw command", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -96,6 +96,28 @@ namespace GHCE.Components
                         Rule = "nonzero"
                     }
                 };
+
+                // 几何层（Transform / Morph）带来的动画信息，这里只做转交，不解释。
+                // 分层的好处：样式与时间互不认识，但可以在同一条指令上汇合。
+                if (p.Matrix != null && p.Matrix.Length >= 6)
+                {
+                    cmd.Matrix = (double[])p.Matrix.Clone();
+                    cmd.Progress = 1.0;
+                }
+                else if (p.MatrixFrames != null && p.MatrixN >= 2)
+                {
+                    cmd.Track = new TrackDef
+                    {
+                        N = p.MatrixN,
+                        Frames = (double[])p.MatrixFrames.Clone(),
+                        Start = 0,
+                        End = -1,
+                        Hidden = false,
+                    };
+                    cmd.Progress = 1.0;
+                }
+
+                if (p.Morph != null) cmd.Morph = p.Morph;
 
                 outCmds.Add(new GHCE_Command(cmd));
             }

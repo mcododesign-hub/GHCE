@@ -19,10 +19,18 @@ namespace GHCE.Bridge
         readonly Dictionary<string, string> _layerKey = new Dictionary<string, string>();
         readonly Dictionary<string, string> _entKey = new Dictionary<string, string>();
         readonly Dictionary<string, string> _evtKey = new Dictionary<string, string>();
+        readonly Dictionary<string, string> _meshKey = new Dictionary<string, string>();
+        readonly Dictionary<string, string> _cmd3dKey = new Dictionary<string, string>();
+        string _scene3dKey;
+        bool _has3D;
         string _canvasKey;
+        string _timelineKey;
         int _rev;
         int _seq;
         bool _hasState;
+
+        /// <summary>变量 → 初值指纹。初值是"文档属性"，改了才重发。</summary>
+        readonly Dictionary<string, string> _varKey = new Dictionary<string, string>(StringComparer.Ordinal);
 
         /// <summary>强制下一帧走整帧快照（新客户端接入 / 重连 / 用户点 Reset）</summary>
         public void Invalidate() => _hasState = false;
@@ -34,7 +42,8 @@ namespace GHCE.Bridge
         /// 图层由指令的 Layer 字段推导；若指令上挂了 LayerDef（Layer 电池），则用显式的
         /// order / opacity / blend / visible，不再按出现顺序猜。
         /// </summary>
-        public string Build(CanvasDef canvas, IList<GHCE_Command> commands, IList<GHCE_Entity> entities, out string summary)
+        public string Build(CanvasDef canvas, IList<GHCE_Command> commands, IList<GHCE_Entity> entities,
+                            Scene3DDef scene3d, out string summary)
         {
             var sw = Stopwatch.StartNew();
             var ops = new List<object>(Math.Max(8, commands.Count * 2));
@@ -78,6 +87,26 @@ namespace GHCE.Bridge
                     ? new Dictionary<string, object> { ["op"] = "doc.reset", ["canvas"] = cv }
                     : new Dictionary<string, object> { ["op"] = "canvas.set", ["value"] = cv });
                 _canvasKey = canvasKey;
+            }
+
+            // ---- 全局时间轴 ----
+            // Track 只带 start/end；"整段多长、要不要循环"是文档级的，这里统一发一条。
+            // 搭在 cmd 上只是为了少一个电池端口，语义上属于 doc。
+            TimelineDef tl = null;
+            foreach (var gc in commands)
+            {
+                if (gc?.Value?.Timeline != null) { tl = gc.Value.Timeline; break; }
+            }
+            var tlKey = tl == null ? "-" : $"{tl.Duration:0.####}|{(tl.Loop ? 1 : 0)}";
+            if (snapshot || tlKey != _timelineKey)
+            {
+                ops.Add(new Dictionary<string, object>
+                {
+                    ["op"] = "timeline.set",
+                    ["duration"] = tl == null ? 8.0 : Math.Max(1e-3, tl.Duration),
+                    ["loop"] = tl == null || tl.Loop,
+                });
+                _timelineKey = tlKey;
             }
 
             // ---- 图层 ----
@@ -188,14 +217,16 @@ namespace GHCE.Bridge
                     + "|" + c.AnchorX.ToString("0.####") + "," + c.AnchorY.ToString("0.####")
                     + "|" + c.Progress.ToString("0.####")
                     + "|" + (c.Matrix == null ? "-" : string.Join(",", c.Matrix.Select(x => x.ToString("0.#####"))))
-                    + "|" + TrackKey(c.Track);
+                    + "|" + TrackKey(c.Track)
+                    + "|" + MorphKey(c.Morph)
+                    + "|" + BindKey(c.Binds);
                 if (!snapshot && _cmdKey.TryGetValue(c.Id, out var prevKey) && prevKey == key) continue;
 
-                ops.Add(new Dictionary<string, object>
+                // 空字段不写：track / morph / bind 绝大多数指令都没有，
+                // 三个 null 在几百条标记上就是十几 KB 的无意义负载。
+                // 运行时的 normalizeCmd 对缺失字段本来就有缺省值。
+                var payload = new Dictionary<string, object>
                 {
-                    ["op"] = "cmd.upsert",
-                    ["value"] = new Dictionary<string, object>
-                    {
                         ["id"] = c.Id,
                         ["geom"] = c.GeomId,
                         ["layer"] = string.IsNullOrEmpty(c.Layer) ? "main" : c.Layer,
@@ -232,9 +263,16 @@ namespace GHCE.Bridge
                                 ["scale"] = new[] { c.Scale, c.Scale },
                                 ["pivot"] = new[] { c.AnchorX, c.AnchorY }
                             },
-                            ["track"] = TrackPayload(c.Track)
-                    }
-                });
+                };
+
+                var trackPayload = TrackPayload(c.Track);
+                if (trackPayload != null) payload["track"] = trackPayload;
+                var morphPayload = MorphPayload(c.Morph);
+                if (morphPayload != null) payload["morph"] = morphPayload;
+                var bindPayload = BindPayload(c.Binds);
+                if (bindPayload != null) payload["bind"] = bindPayload;
+
+                ops.Add(new Dictionary<string, object> { ["op"] = "cmd.upsert", ["value"] = payload });
                 _cmdKey[c.Id] = key;
             }
             foreach (var old in new List<string>(_cmdKey.Keys))
@@ -271,6 +309,9 @@ namespace GHCE.Bridge
                     ["fade"] = e.Fade,
                     ["opacity"] = e.Opacity
                 };
+                // 状态程序（v0.32）：null 表示"沿用沿曲线跑"，与旧作品完全兼容
+                if (e.Program != null && !e.Program.IsEmpty)
+                    value["program"] = e.Program.ToJson();
 
                 var key = JsonSerializer.Serialize(value);
                 if (!snapshot && _entKey.TryGetValue(e.Id, out var prevEnt) && prevEnt == key) continue;
@@ -305,6 +346,21 @@ namespace GHCE.Bridge
                     ["detail"] = e.Detail == null ? "" : e.Detail,
                     ["targets"] = e.Targets ?? new string[0]
                 };
+                if (e.Writes != null && e.Writes.Count > 0)
+                {
+                    var ws = new List<Dictionary<string, object>>(e.Writes.Count);
+                    foreach (var w in e.Writes)
+                    {
+                        if (w == null || string.IsNullOrEmpty(w.Var)) continue;
+                        ws.Add(new Dictionary<string, object>
+                        {
+                            ["var"] = w.Var,
+                            ["op"] = w.Op ?? "set",
+                            ["value"] = w.Value
+                        });
+                    }
+                    if (ws.Count > 0) value["writes"] = ws;
+                }
                 var key = JsonSerializer.Serialize(value);
                 if (!snapshot && _evtKey.TryGetValue(e.Id, out var prevEvt) && prevEvt == key) continue;
 
@@ -316,6 +372,109 @@ namespace GHCE.Bridge
                 if (seenEvt.Contains(old)) continue;
                 ops.Add(new Dictionary<string, object> { ["op"] = "event.remove", ["id"] = old });
                 _evtKey.Remove(old);
+            }
+
+            // ---- 运行时变量（v0.30）----
+            // 变量只有"被用到"才进文档：写在 Bind 的表达式里，或写在事件规则的 writes 里。
+            // 初值取表达式树的声明值；事件写了但没人读的变量也给个 0，免得运行时拿到 undefined。
+            var vars = new Dictionary<string, double>(StringComparer.Ordinal);
+            foreach (var gc in commands)
+            {
+                var binds = gc?.Value?.Binds;
+                if (binds == null) continue;
+                foreach (var kv in binds) kv.Value?.CollectVars(vars);
+            }
+            foreach (var e in events)
+            {
+                if (e?.Writes == null) continue;
+                foreach (var w in e.Writes)
+                {
+                    if (w != null && !string.IsNullOrEmpty(w.Var) && !vars.ContainsKey(w.Var)) vars[w.Var] = 0;
+                }
+            }
+            var seenVar = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var kv in vars)
+            {
+                seenVar.Add(kv.Key);
+                var vKey = kv.Value.ToString("0.#####");
+                if (!snapshot && _varKey.TryGetValue(kv.Key, out var prevVar) && prevVar == vKey) continue;
+                ops.Add(new Dictionary<string, object> { ["op"] = "var.upsert", ["id"] = kv.Key, ["value"] = kv.Value });
+                _varKey[kv.Key] = vKey;
+            }
+            foreach (var old in new List<string>(_varKey.Keys))
+            {
+                if (seenVar.Contains(old)) continue;
+                ops.Add(new Dictionary<string, object> { ["op"] = "var.remove", ["id"] = old });
+                _varKey.Remove(old);
+            }
+
+            // ---- 三维场景（阶段 5）----
+            // 网格与材质走增量；场景级参数（相机 / 背景 / 对象顺序）整包发。
+            // 后者只有几十字节，为省这点去算差量不划算，而它一改就必须立刻生效。
+            if (scene3d != null && scene3d.Cmds != null && scene3d.Cmds.Count > 0)
+            {
+                var seenMesh = new HashSet<string>();
+                var seenCmd3 = new HashSet<string>();
+
+                foreach (var c in scene3d.Cmds)
+                {
+                    if (c?.Mesh == null || string.IsNullOrEmpty(c.Mesh.Id)) continue;
+
+                    var m = c.Mesh;
+                    seenMesh.Add(m.Id);
+                    var mk = MeshKey(m);
+                    if (snapshot || !_meshKey.TryGetValue(m.Id, out var pm) || pm != mk)
+                    {
+                        ops.Add(new Dictionary<string, object>
+                        {
+                            ["op"] = "mesh.upsert",
+                            ["id"] = m.Id,
+                            ["value"] = MeshPayload(m)
+                        });
+                        _meshKey[m.Id] = mk;
+                    }
+
+                    seenCmd3.Add(c.Id);
+                    var ck = Cmd3DKey(c);
+                    if (!snapshot && _cmd3dKey.TryGetValue(c.Id, out var pc) && pc == ck) continue;
+
+                    ops.Add(new Dictionary<string, object>
+                    {
+                        ["op"] = "cmd3d.upsert",
+                        ["id"] = c.Id,
+                        ["value"] = Cmd3DPayload(c)
+                    });
+                    _cmd3dKey[c.Id] = ck;
+                }
+
+                foreach (var old in new List<string>(_meshKey.Keys))
+                {
+                    if (seenMesh.Contains(old)) continue;
+                    ops.Add(new Dictionary<string, object> { ["op"] = "mesh.remove", ["id"] = old });
+                    _meshKey.Remove(old);
+                }
+                foreach (var old in new List<string>(_cmd3dKey.Keys))
+                {
+                    if (seenCmd3.Contains(old)) continue;
+                    ops.Add(new Dictionary<string, object> { ["op"] = "cmd3d.remove", ["id"] = old });
+                    _cmd3dKey.Remove(old);
+                }
+
+                var sk = Scene3DKey(scene3d);
+                if (snapshot || _scene3dKey != sk)
+                {
+                    ops.Add(new Dictionary<string, object> { ["op"] = "scene3d.set", ["value"] = Scene3DPayload(scene3d) });
+                    _scene3dKey = sk;
+                }
+                _has3D = true;
+            }
+            else if (_has3D)
+            {
+                ops.Add(new Dictionary<string, object> { ["op"] = "scene3d.clear" });
+                _meshKey.Clear();
+                _cmd3dKey.Clear();
+                _scene3dKey = null;
+                _has3D = false;
             }
 
             _hasState = true;
@@ -366,7 +525,7 @@ namespace GHCE.Bridge
                         agg = new EventDef
                         {
                             Id = e.Id, Event = e.Event, Action = e.Action, Detail = e.Detail,
-                            Targets = new string[0]
+                            Targets = new string[0], Writes = e.Writes
                         };
                         byId[e.Id] = agg;
                         order.Add(e.Id);
@@ -396,6 +555,12 @@ namespace GHCE.Bridge
             return prefix + Fnv(b64).ToString("x8");
         }
 
+        /// <summary>按文本身份生成稳定 ID（Mark 用：源路径 id + 序号）。</summary>
+        public static string StableId(string prefix, string identity)
+        {
+            return prefix + Fnv(identity ?? string.Empty).ToString("x8");
+        }
+
         static uint Fnv(string s)
         {
             uint h = 2166136261;
@@ -408,9 +573,154 @@ namespace GHCE.Bridge
         }
 
         /// <summary>时间轨的 diff 指纹：帧序列用 base64 的 FNV，避免每帧重发几万个数字</summary>
+        /// <summary>
+        /// 信号负载：只发函数描述，不发采样值。
+        /// 几十字节换 60 Hz 的实时随机，这是整个协议里最省的一次交换。
+        /// </summary>
+        static string MorphKey(MorphDef m)
+        {
+            if (m == null || m.N < 2 || m.Count < 2 || m.Frames == null) return "-";
+            return $"{m.N}|{m.Count}|{m.Step:0.###}|{(m.Closed ? 1 : 0)}|{Fnv(ToBase64F32(m.Frames)).ToString("x8")}";
+        }
+
+        /// <summary>
+        /// 几何 morph 负载：N 组同拓扑点缓冲，走 f32+base64。
+        /// 12 帧 × 96 点 × 2 = 2304 个数，JSON 数字数组会到 20 KB 以上，base64 约 1/3。
+        /// </summary>
+        static Dictionary<string, object> MorphPayload(MorphDef m)
+        {
+            if (m == null || m.N < 2 || m.Count < 2 || m.Frames == null) return null;
+            if (m.Frames.Length < (long)m.N * m.Count * 2) return null;
+            return new Dictionary<string, object>
+            {
+                ["n"] = m.N,
+                ["count"] = m.Count,
+                ["step"] = m.Step <= 1e-6 ? 12.0 : m.Step,
+                ["closed"] = m.Closed,
+                ["frames"] = ToBase64F32(m.Frames),
+            };
+        }
+
+        // ------------------------------------------------------------------
+        // 三维序列化
+        // ------------------------------------------------------------------
+
+        /// <summary>Vertex fingerprint plus attribute sizes: a mesh whose normals appeared must be resent.</summary>
+        static string MeshKey(MeshDef m) =>
+            $"{m.Id}|{m.Kind}|{m.Normals?.Length ?? 0}|{m.Uvs?.Length ?? 0}";
+
+        static Dictionary<string, object> MeshPayload(MeshDef m)
+        {
+            return new Dictionary<string, object>
+            {
+                ["kind"] = string.IsNullOrEmpty(m.Kind) ? "mesh" : m.Kind,
+                ["positions"] = ToBase64F32(m.Positions),
+                ["indices"] = m.Indices == null || m.Indices.Length == 0 ? null : ToBase64U32(m.Indices),
+                ["normals"] = m.Normals == null ? null : ToBase64F32(m.Normals),
+                ["uvs"] = m.Uvs == null ? null : ToBase64F32(m.Uvs),
+                ["count"] = m.VertexCount,
+                ["tris"] = m.TriCount,
+            };
+        }
+
+        static string Cmd3DKey(Cmd3DDef c) =>
+            $"{c.MeshId}|{c.Material?.Key() ?? "-"}|{c.Xform?.Key() ?? "-"}|{(c.Visible ? 1 : 0)}|{c.Order}";
+
+        static Dictionary<string, object> Cmd3DPayload(Cmd3DDef c)
+        {
+            var x = c.Xform;
+            return new Dictionary<string, object>
+            {
+                ["mesh"] = c.MeshId,
+                ["material"] = new Dictionary<string, object>
+                {
+                    ["mode"] = c.Material?.Mode ?? 1,
+                    ["color"] = c.Material?.Color ?? "#e8e6df",
+                    ["size"] = c.Material?.Size ?? 2,
+                    ["glow"] = c.Material?.Glow ?? 0,
+                    ["opacity"] = c.Material?.Opacity ?? 1,
+                },
+                ["xform"] = new Dictionary<string, object>
+                {
+                    ["matrix"] = x?.Matrix == null ? null : ToBase64F32(x.Matrix),
+                    ["frames"] = x?.Frames == null ? null : ToBase64F32(x.Frames),
+                    ["n"] = x?.N ?? 0,
+                    ["duration"] = x?.Duration ?? 1.5,
+                },
+                ["visible"] = c.Visible,
+                ["order"] = c.Order,
+            };
+        }
+
+        static string Scene3DKey(Scene3DDef s)
+        {
+            var ids = new StringBuilder();
+            foreach (var c in s.Cmds) ids.Append(c.Id).Append(',');
+            return $"{s.Background}|{(s.Lights ? 1 : 0)}|{s.Ambient:0.###}|{s.Camera?.Key() ?? "auto"}|{ids}";
+        }
+
+        static Dictionary<string, object> Scene3DPayload(Scene3DDef s)
+        {
+            var ids = new List<string>(s.Cmds.Count);
+            foreach (var c in s.Cmds) ids.Add(c.Id);
+
+            var cam = s.Camera;
+            object camPayload = cam == null
+                ? null
+                : new Dictionary<string, object>
+                {
+                    ["hasPos"] = cam.HasPosition,
+                    ["pos"] = new[] { cam.Px, cam.Py, cam.Pz },
+                    ["hasTarget"] = cam.HasTarget,
+                    ["target"] = new[] { cam.Tx, cam.Ty, cam.Tz },
+                    ["fov"] = cam.Fov,
+                    ["ortho"] = cam.Orthographic,
+                    ["zoom"] = cam.Zoom,
+                };
+
+            return new Dictionary<string, object>
+            {
+                ["bg"] = s.Background,
+                ["lights"] = s.Lights,
+                ["ambient"] = s.Ambient,
+                ["camera"] = camPayload,
+                ["objects"] = ids,
+            };
+        }
+
+        static string ToBase64U32(int[] a)
+        {
+            if (a == null || a.Length == 0) return null;
+            var bytes = new byte[a.Length * 4];
+            Buffer.BlockCopy(a, 0, bytes, 0, bytes.Length);
+            return Convert.ToBase64String(bytes);
+        }
+
+        /// <summary>绑定指纹：属性名 + 表达式树结构。空绑定按 "-" 处理。</summary>
+        static string BindKey(Dictionary<string, RuntimeExprDef> binds)
+        {
+            if (binds == null || binds.Count == 0) return "-";
+            var parts = new List<string>(binds.Count);
+            foreach (var kv in binds) parts.Add($"{kv.Key}={kv.Value?.Key()}");
+            parts.Sort(StringComparer.Ordinal);
+            return string.Join(";", parts);
+        }
+
+        static Dictionary<string, object> BindPayload(Dictionary<string, RuntimeExprDef> binds)
+        {
+            if (binds == null || binds.Count == 0) return null;
+            var d = new Dictionary<string, object>(binds.Count);
+            foreach (var kv in binds)
+            {
+                if (kv.Value == null) continue;
+                d[kv.Key] = kv.Value.ToJson();
+            }
+            return d.Count == 0 ? null : d;
+        }
+
         static string TrackKey(TrackDef t)
         {
-            if (t == null || t.N < 2 || (t.Frames == null && t.Reveal == null)) return "-";
+            if (t == null || t.N < 2) return "-";
             var ease = t.EaseY == null
                 ? "-"
                 : Fnv(string.Join(",", t.EaseY.Select(x => x.ToString("0.####")))).ToString("x8");
@@ -418,7 +728,7 @@ namespace GHCE.Bridge
             var rv = t.Reveal == null
                 ? "-"
                 : Fnv(string.Join(",", t.Reveal.Select(x => x.ToString("0.####")))).ToString("x8");
-            return $"{t.N}|{t.Duration:0.####}|{(t.Loop ? 1 : 0)}|{fr}|{rv}|{ease}";
+            return $"{t.N}|{t.Start:0.####}|{t.End:0.####}|{(t.Hidden ? 1 : 0)}|{fr}|{rv}|{ease}";
         }
 
         /// <summary>
@@ -430,14 +740,16 @@ namespace GHCE.Bridge
             if (t == null || t.N < 2) return null;
             bool hasFrames = t.Frames != null && t.Frames.Length >= t.N * 6;
             bool hasReveal = t.Reveal != null && t.Reveal.Length >= t.N;
-            if (!hasFrames && !hasReveal) return null;
+            // 注意：两者都没有也照样发 —— morph 模式下轨道只提供区间与缓动，帧由 cmd.morph 自带
             return new Dictionary<string, object>
             {
                 ["n"] = t.N,
                 ["frames"] = hasFrames ? ToBase64F32(t.Frames) : null,
                 ["reveal"] = hasReveal ? t.Reveal : null,
-                ["duration"] = t.Duration <= 1e-6 ? 1.0 : t.Duration,
-                ["loop"] = t.Loop,
+                // 轨道只报自己的位置；时长与循环由 timeline.set 统一给
+                ["start"] = t.Start,
+                ["end"] = t.End,              // < = start 表示占满全局时长
+                ["hidden"] = t.Hidden,
                 ["easeX"] = t.EaseX,
                 ["easeY"] = t.EaseY
             };

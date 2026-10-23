@@ -254,14 +254,102 @@ cd mock && node verify-plugin-serve.mjs
 | **Stroke Style** | Drawing | 6 | 改描边（颜色 / 线宽 / 透明度 / 虚线 / 端点） |
 | **Fill Style** | Drawing | 4 | 改填充（颜色 / 透明度 / 清除） |
 | Draw Progress | Drawing | 3 | Progress + Spread → 沿路径逐步显现 |
-| Transform | Drawing | **2** | Commands + 每个指令一个 Xform（1 个则共用）；改了浏览器自己演过去 |
-| **Track** | Animation | **6** | 时间轨：`Frames`(N 个 Transform) / `Reveal`(N 个数) / `Ease`(一条曲线) / `Duration` / `Loop`。GH 算一次，浏览器按时间插值 |
+| Transform | **Animation** | **2** | `Paths` + `Xform`(1 = static / N = frame sequence) → `Paths` |
+| **Track** | Animation | **6** | 轨道：`Commands` / `Frames`(N 个 Transform) / `Reveal`(N 个数) / **`Range`(Interval 入点出点)** / `Ease` / `Hidden`。只声明"我占哪一段"，不含时长 |
+| **Timeline** | Animation | **3** | 全局时间轴：`Tracks` / `Duration` / `Loop`。所有轨道共用这一条播放头 |
+| **Morph** | **Animation** | **2** | `Geometries`(N 条，顺序即时间) / `Step` → `Paths`（带顶点帧序列） |
+| **Random** | Random | **0 → 2** | `Value` (GH, 30 Hz) + `Signal` (browser, frame rate) |
+| **Noise 1D** | Random | **1 → 2** | `X` → `Value` + `Signal` |
+| **Noise 2D** | Random | **2 → 2** | `X` `Y` → `Value` + `Signal` |
+| **Noise 3D** | Random | **3 → 2** | `X` `Y` `Z` → `Value` + `Signal` |
+| **Signal to Float** | Random | **1** | `Signal` → `Value`, read back from the browser |
 | **Event Trigger** | Animation | **5** | 管道：把"事件 → 动作"挂到喂进来的这几条指令上 |
-| Render Output | Output | **5** | 编译 + 推送 + 预览窗（事件跟着指令走，不再单独占口） |
+| Render Output | Output | **6** | 编译 + 推送 + 预览窗。第 6 个口是 `Scene`（三维） |
 | Entity Blueprint | Entity | **5** | 沿一条曲线运动的动态对象（数量 / 速度 / 寿命 / 相位）· 确定性分布 |
 | Entity Look | Entity | **8** | 形状（单条曲线）/ 颜色 / 线宽 / 缩放 / 拖尾 / 图层 / 淡出 |
 | Interaction | Input | 0 | 指针 / 点击 / 按键（画布坐标） |
+| **Mesh Input** | **3D** | **2** | Rhino `Mesh` / `SubD` / `Brep` → 三角化 mesh |
+| **Point 3D** | **3D** | **1** | `Points` → 点云 |
+| **Curve 3D** | **3D** | **2** | `Curves` / `Samples` → **每条曲线一个对象**（闭合曲线自动回接起点） |
+| **Draw Points** | **3D** | **4** | `Points` / `Colour` / `Size` / `Opacity` → `Commands 3D`。点直接进场景，不用先过 `Point 3D` |
+| **Transform 3D** | **3D** | **2** | `Meshes` + `Xform`(1 = static / N = frame sequence) → `Meshes` |
+| **Draw 3D** | **3D** | **6** | `Meshes` / `Mode`(1–5) / `Colour` / `Size` / `Glow` / `Opacity` → `Commands 3D` |
+| **Camera 3D** | **3D** | **5** | `Position` / `Target` / `Fov` / `Projection` / `Zoom`。全空 = 自动取景 |
+| **Scene 3D** | **3D** | **4** | `Commands` / `Camera` / `Background` / `Lights` → `Scene` |
 | Runtime Info | Input | 0 | 自检：帧率 / 对象数 / 耗时 / 连接数 |
+
+**动画的三层，以及 Morph 为什么是通用答案**
+
+| 层 | 判据 | 谁算 | 电池 |
+|---|---|---|---|
+| 属性 | 点位不动，只改数值 | 浏览器 | `Track`（矩阵帧序列 / reveal） |
+| 顶点 | 点位动，**点数与顺序不变** | 浏览器插值，GH 只采样 | **`Morph`** |
+| 换镜头 | 拓扑变了（布尔 / 细分） | 只能交叉淡入 | 未做 |
+
+### 三层分工：几何 → 绘制 → 时间（v0.21）
+
+```
+Curve ─► Path Input ─┬─► Morph(Geometries, Step) ─┐
+                     └─► Transform(Paths, Xform×N) ─┴─► Paths ─► Draw Path ─► Cmds ─► Track ─► Timeline
+```
+
+| 层 | 电池 | 只回答 | 输出 |
+|---|---|---|---|
+| 几何 | `Path Input` / `Morph` / `Transform` | 这条曲线长什么形状、怎么变 | `Paths` |
+| 绘制 | `Draw Path` | 它是什么颜色、多粗、什么图层 | `Cmds` |
+| 时间 | `Track` / `Timeline` | 这段播多久、什么时候开始、怎么缓动 | `Cmds` |
+
+**为什么 Transform 和 Morph 同级、都输出 Paths**：它们都只改形状，不关心样式。
+`Transform` 是仿射（6 个数），`Morph` 是顶点（2·Count 个数）—— Morph 更通用，Transform 是它的特例。
+样式归 `Draw Path`，时间归 `Track`，三者互不认识，但在同一条指令上汇合。
+
+`Morph` **只负责打包，不提供任何操作**：`Geometries`（列表顺序即时间）+ `Step`。
+中间用什么运算算出来的（fillet / 布尔 / 放样 / 自己的脚本），电池不关心。
+
+`Transform` 的 `Xform` 接 1 个是静态矩阵，接 N 个是帧序列 —— `Series` 驱动 `Rotate` 就有了动画。
+
+### Random / Noise：输出的是活的 Number，不是专用类型
+
+```
+Noise 1D(X) ──► 0.37  ──► Rotate(Angle) ──► Transform ──► Draw Path
+```
+
+四个电池输出**普通 double**（0..1），可以直接接进任何原生数值输入：`Rotate`、`Move`、
+`Scale`、`Dispatch`、`Panel`。没有 Signal 类型、没有 Apply 电池、协议里也没有对应字段。
+
+每个电池有**两个出口**，因为它们代表两条诚实的路径：
+
+| 输出 | 谁算 | 频率 | 延迟 | 代价 |
+|---|---|---|---|---|
+| `Value` | GH | 30 Hz | 无 | 下游每次都要重算 |
+| `Signal` | 浏览器 | 帧率 | ~100 ms（走 `stat` 回传） | GH 不做功，但要接 `Signal to Float` 才有数 |
+
+`Value` 靠两件事活着：进程内 `Stopwatch` 提供时间，每次求解末尾 `ScheduleSolution` 安排下一次（限频 30 Hz）。
+
+`Signal` 的链路：`Signal to Float` 每帧把定义推给运行时（约 100 字节）→ 浏览器按帧求值
+→ 值随 `stat` 回传（10 Hz）→ `Signal to Float` 读缓存。
+
+**`Signal to Float` 的心跳是 UI Timer，不是 `ScheduleSolution`。** 这一点是硬性要求：
+它的值来自外部，必须无条件定期重读；靠自我调度求解的组件在"没有下游"时并不可靠。
+Timer 间隔 100ms，与 `stat` 同频，且小于 tween 的 `CONTINUOUS_GAP`（120ms）——
+超过 120ms 的话，每次刷新都会被当成一次离散变更，起一段 0.9 秒过渡，画面会黏。
+
+`Message` 在拿不到值时直接说明断在哪一环：
+
+| Message | 含义 | 怎么办 |
+|---|---|---|
+| 一个数字 | 链路通 | — |
+| `no bridge · connect a Render Output` | 本地桥没起来 | 图里要有 `Render Output`，且 `Enabled` 为 true |
+| `no telemetry · open the preview window` | 桥在跑但没收到 `stat` | 打开预览窗（或让外部浏览器连上） |
+| `not echoed · <id>` | 桥和窗都在，但浏览器没回传这个 id | 信号定义没到浏览器，或 `stat` 里没带 signals |
+
+**怎么选**：要接进原生电池、不能有延迟 → `Value`；要画面级的平滑、且 GH 尽量别干活 → `Signal`。
+
+为什么不给操作下拉：PSR 已有 `Transform`，放这里是重复；倒角、布尔、细分、自定义脚本
+永远列不全 —— 一旦列成枚举，没用到的可能性就被关在门外了。采样应该发生在 GH 原生电池里。
+
+两条硬约束：**所有帧点数一致**（所以内部按归一化长度固定采样 96 点，不按弦高）、
+**顺序一一对应**（布尔/细分这类换拓扑的运算不满足，会得到扭曲的中间态）。
 
 ### 序号化的对照表（都写在端口说明里）
 
@@ -872,3 +960,517 @@ PASS  带 Shape 的蓝图拿到三角形形状（3 点、闭合）  → {"pts":3
 - "attract 行为把粒子拉向指针" → 删除；换成"均匀铺开"和"写 phase 前移"
 - mock 的 `living` 场景改成三条 `follow-curve` 蓝图，用速度/相位/寿命表达三种观感
 - `snapshot().meanDistTo` 随 attract 一起删除（没有调用者了）
+
+## 11. 验证信号链路的三段式（0.24.1）
+
+`waiting for runtime` 是四种不同故障共用的一句话，排查时按链路的三个环节切开：
+
+```bash
+# ① C# 发送侧：抓插件实际发出的载荷
+probe --signal          # 8788 端口，只广播 signal 定义
+node mock/grab.mjs      # 期望 payload ok: true，字段齐全
+
+# ② 运行时接收侧：真浏览器 + 插件桥
+probe --signal
+BASE='http://127.0.0.1:8788/?ws=ws://127.0.0.1:8788/ghce' node mock/verify-signal-live.mjs
+# 期望 signalIds: ["a1b2c3d4"]，且 stat.signals 里有值
+
+# ③ stat 解析侧：探针内置，不依赖网络
+probe                   # 看 "stat parse: has=True value=0.4375"
+```
+
+三段都过之后，剩下的只可能是 GH 侧驱动 —— 也就是 v0.24.1 换掉的那个心跳。
+
+
+## 12. 三维层（v0.25.0）
+
+### 结构：两个 canvas，两个循环
+
+```
+#stage-inner
+├── <canvas id="layer-3d">   z-index 2，铺满，透明背景，pointer-events: none
+└── <canvas class="art">     z-index 1，二维，由 Renderer2D 动态插入
+```
+
+二维一行没改。三维是叠上去的第二层，两者只在 `main.js` 的 patch 分发处相遇：
+凡是 `mesh.` / `cmd3d.` / `scene3d.` 开头的 op 交给 `Scene3D`，其余照旧走 `Doc`。
+
+### Three.js 怎么进来
+
+`runtime/vendor/` 里放 `three.core.js` + `three.webgpu.js` + `three.tsl.js`（r186，3.8 MB），
+作为嵌入资源进 `.gha`（gzip 后 0.7 MB）。页面用 import map 映射三个裸标识符：
+
+```html
+<script type="importmap">
+{ "imports": {
+  "three": "./vendor/three.webgpu.js",
+  "three/webgpu": "./vendor/three.webgpu.js",
+  "three/tsl": "./vendor/three.tsl.js"
+} }
+</script>
+```
+
+**没有打包工具**。`three.webgpu.js` 内部用相对路径 `./three.core.js`，所以三个文件必须同目录。
+
+`scene3d.js` 用动态 `import()` 加载，不做 3D 的作品不为那 2.3 MB 付一分钱。
+
+### 三种几何共用一个缓冲
+
+`MeshDef.Kind` 决定这份顶点缓冲怎么解释：
+
+| Kind | 索引含义 | 运行时对象 | 来源 |
+|---|---|---|---|
+| `mesh` | 每 3 个一组 = 三角形 | `Mesh` / `Points`(mode 3) | `Mesh Input` |
+| `points` | 无索引 | `Points` | `Point 3D` |
+| `lines` | 每 2 个一组 = 线段 | `LineSegments` | `Curve 3D` |
+
+一个类型、一套编码、一套增量逻辑。`Draw 3D` 的 `Mode` 对 `points` / `lines` 没有意义，
+它们只有一种画法 —— 用 `Colour` 和 `Size` 就够（`Size` 是点径；线宽受 WebGL 限制固定 1px）。
+
+### 为什么 Curve 3D 一条曲线一个对象
+
+合并成一个对象的话，整组只能共用一个样式，而且从电池图上读不出"这是几根曲线"。
+一条一个对象之后，`Draw 3D` 的输出和输入一一对应，想给每根不同颜色就直接接 list。
+
+### 3D 线的粗细（硬限制，先说清）
+
+`LineBasicNodeMaterial` 画的线**恒为 1 像素**。不是没接参数，是 WebGL 的 `linewidth`
+在绝大多数驱动上不生效。Three.js 的 `Line2` 能画粗线，但它用的是 `ShaderMaterial`（GLSL），
+**在 WebGPURenderer 下不工作** —— 而我们两个后端都要支持。
+
+可用替代：把线变成管状 mesh（`Mesh.CreateFromCurvePipe`）。代价是三角形数上去了
+（64 段 × 6 边 ≈ 380 三角/根），好处是粗细可控、受光、能发光、虚线也能自己排。
+要不要加，取决于你是否需要粗线。
+
+### 画布分辨率（"糊"的根因）
+
+canvas 的 drawing buffer 必须等于 `CSS 尺寸 × DPR`。这一条踩过两次：
+
+1. `main.js` 在构造后立刻调 `resize()`，那时 `renderer` 还是 `null`，调用被丢弃 ——
+   buffer 停在默认的 **300×150**，被 CSS 拉满，看起来就是糊的。
+2. DPR 变化（拖到另一块不同缩放的显示器）时 CSS 尺寸不变，只看宽高不会触发重建。
+
+现在 `resize()` 记住请求尺寸，`_initRenderer` 完成后补一次；`render()` 每帧走
+`_syncSize()` 比对 **宽 / 高 / DPR** 三者，任一变化就重建。验收断言：
+`bufW === cssW × min(dpr, 2)`，并且把 DPR 强改成 2 后必须跟着翻倍。
+
+### 坐标系
+
+- Rhino 世界是 **Z 向上**，所以 `camera.up = (0,0,1)`；不设模型会躺着。
+- 矩阵**不做转置**。Rhino 的行向量约定把平移放在最后一行（M30–M32），
+  Three.js 的 `Matrix4.elements` 也把平移放在索引 12–14，两套布局是同一个 16 元序列。
+  这条由 `probe` 的 `matrix3d` 断言钉死：绕 Z 90° + 平移 (10,20,5) 必须把 (1,0,0) 送到 (10,21,5)。
+
+### 自动取景
+
+`Camera 3D` 的 `Position` 没接时，运行时每帧（几何变动时）按所有可见对象的包围球算：
+
+```
+radius = |size| / 2
+dist   = radius / sin(fov/2) * 1.15
+方向   = 等轴方向 + 鼠标环绕偏移
+```
+
+实测 `dist/radius = 1.35`，相机落在包围球外。`near` 也跟着 `dist` 走，避免大尺度模型被裁。
+
+### 材质
+
+| Mode | Three.js | 备注 |
+|---|---|---|
+| 1 solid | `MeshStandardNodeMaterial` | roughness 0.42 / metalness 0.05 固定 |
+| 2 wireframe | `MeshBasicNodeMaterial({wireframe:true})` | 比 LineSegments 省一半顶点 |
+| 3 points | `PointsNodeMaterial` | `sizeAttenuation = false` |
+| 4 normals | `MeshNormalNodeMaterial` | 忽略 Colour |
+| 5 unlit | `MeshBasicNodeMaterial` | 纯色 |
+
+全部用 TSL 的 `colorNode` / `emissiveNode`，同一份代码在 WebGPU 与 WebGL2 两个后端都能编译。
+材质按 `mode|color|size|glow|opacity` 缓存 —— 不缓存的话每次 `cmd3d.upsert` 都会新建材质，
+GPU 资源会一路涨上去。
+
+### 增量
+
+- `mesh.upsert` 的键 = 顶点指纹 + 法线/UV 数组长度。顶点没动就不重发。
+- `cmd3d.upsert` 的键 = 网格 id + 材质 + 变换 + 可见性 + 顺序。
+- `scene3d.set` 每次变化都整包发（相机 / 背景 / 对象顺序），只有几十字节，不值得算差量。
+- 三维和二维共用同一个 `_hasState`：整帧无变化依然返回 `null`。
+
+### 验收命令
+
+```bash
+node mock/verify-3d.mjs      # 运行时三维 12 项
+node mock/replay-3d.mjs      # C# 产出的三维 patch 灌进运行时，6 项
+node mock/verify.mjs         # 二维回归 64 项
+```
+
+
+## 13. 图标：随主题走（v0.28.0）
+
+### 为什么之前看不见
+
+早先图标固定成"深底 + 浅线"。电池图标有底，在浅色主题下是一片深色方块，没问题；
+但**数据图标（参数类型）没有底**，白线直接画在浅色画布上，几乎不可见。
+
+### 现在怎么做
+
+`Icons` 里三个颜色改成属性，由 `Dark` 决定：
+
+| | 深色主题 | 浅色主题 |
+|---|---|---|
+| `Tile`（电池底） | `#14141A` | `#F7F7FA` |
+| `Edge`（边框） | `#3A3A44` | `#C2C2CC` |
+| `Ink`（线条） | `#E8E6DF` | `#2C2C36` |
+
+`Dark` 判断：读 `Rhino.ApplicationSettings.AppearanceSettings.ViewportBackgroundColor`
+的亮度，`< 128` 算深色。读不到时**默认浅色** —— 那是最常见的配置，也是"看不见"的那种。
+
+`Green` / `Pink` 是强调色，两种主题下都够亮，不跟主题变（`Pink` 从 `#FD7AB4` 调深到 `#D63E84`，
+在浅底上才够对比）。
+
+### 数据图标加了底
+
+`DataTile()` 用 `Ink` 的低透明度派生填充 + 边框：
+
+```csharp
+Fill: Color.FromArgb(Dark ? 0x24 : 0x0E, Ink)   // 深色 14%，浅色 5.5%
+Pen : Color.FromArgb(0x66, Ink)
+```
+
+底和线同源，所以永远不会出现"底和线同色"。有边框，和电池图标的实心块区分开。
+
+### 验证
+
+探针支持 `GHCE_ICON_THEME=light|dark` 强制主题，出两张对照图
+（`docs/shots/icons-light.png` / `icons-dark.png`），连图背景也跟着主题变。
+
+> **这套验证不够，见 §15。** 当时只截了"一个数据图标"统计明暗占比（light 1.1% 暗 / 62% 亮，
+> dark 63.7% 暗 / 1.3% 亮），口径只覆盖 `DataSignal`，另一批数据图标是
+> "不透明黑底 + 深色字形"，统计照不到，用户看到的是整组黑块。已改成逐只图标断言。
+
+**已知限制**：图标有缓存，GH 运行中切换主题不会重绘，要重启 GH。
+
+## 14. 参数类型统一归到 `GHCE / Data`
+
+12 个 `Param_GHCE_*` 的 SubCategory 从 `Drawing` / `Output` / `Entity` / `Random` / `3D`
+统一改成 **`Data`**。标签页里数据图标不再散落在功能电池之间。
+
+改法：只动带 `GH_ParamAccess` 的 base 构造，电池的 `base(...)` 不带这个参数，所以不会误伤。
+
+探针可以验证：`OK param Canvas [GHCE/Data] 24x24`。
+
+## 15. 图标颜色全部令牌化（v0.28.1）
+
+### 症状与根因
+
+浅色主题下数据图标是**黑的**，里面的符号几乎看不见。
+
+`DataFrame()` 里还留着 v0.28 之前"深底浅线"时代的硬编码：
+
+```csharp
+new SolidBrush(Color.FromArgb(0x18, 0x18, 0x20))   // 不透明近黑，画在 DataTile 之上
+```
+
+它把 `DataTile` 的底连同上面的字形一起盖掉；而字形此刻已经是浅色主题的深墨色
+（`Ink = #2C2C36`）—— 黑底黑字。同一轮还留着 12 处旧版的半透明米色笔画
+（`Color.FromArgb(a, 0xE8, 0xE6, 0xDF)`），在浅色底上等于白线，`Noise` / `Random` /
+`Morph` / `Timeline` 都受影响。
+
+这不是"主题判断错了"：截图取样功能区底色 `#F0F0F0`、电池图标底 `#F7F7FA`，
+`Dark` 判的是浅色，判断是对的。
+
+### 改法
+
+1. **颜色只用令牌**。`Tile / Edge / Ink / Card / CardEdge / Muted / Faint / Screen / ScreenInk`
+   全部由 `Dark` 派生，另加 `Tint(c, a)` 给透明度。`Icons.cs` 里不再有任何字面 RGB
+   （剩下的 `Color.FromArgb(a, Ink)` 都是"令牌加透明度"）。
+2. **数据图标改用不透明白卡**：`DataTile` 填 `Card`、描 `CardEdge`；
+   `DataFrame` 退回它本来的职责 —— 只画左上角那道类别色标，不再画第二张卡片。
+   卡片自带底和边，功能区是浅是深都不影响可读性。
+3. **"屏幕"两侧反向**：`Screen` 浅色主题是深屏、深色主题是亮屏，`ScreenInk` 反过来。
+   `Canvas` / `Render Output` / `data: Signal` 都用这对，屏里那笔永远看得见。
+   `Canvas` 屏里补了一笔粉色内容 —— 纯深屏在 24px 下就是一块黑，认不出是画布。
+
+### 验证：逐只图标断言，不再抽样
+
+探针新增（两套主题各跑一遍）：
+
+```
+底色 bg = 不透明像素(α≥250)的亮度众数
+覆盖率 cover = |L-bg|>60 的像素占 α≥160 像素的比例    下限 4%
+反差   maxΔ = 与 bg 的最大亮度差                      下限 80
+```
+
+覆盖不足 = 字被底埋了；反差不足 = 底和字同色。任一图标不达标即 `FAIL`，
+并逐只打印 `bg / cover / maxΔ`。实测：
+
+| | 最弱覆盖 | 最弱反差 | 结果 |
+|---|---|---|---|
+| light | `Entity Look` 4.3% | `Layer` maxΔ=132 | PASS |
+| dark | `data: Entities` 5.1% | `Layer` maxΔ=95 | PASS |
+
+修前同口径下 `data: Signal` 在深色主题是 cover 3.2% / maxΔ=73 —— 正是"看不见"。
+
+
+## 16. 图标固定"深色芯片 + 浅色笔画"（v0.28.2）
+
+### 决策
+
+用户明确要求：**面板始终是浅色的，别管主题，图标一律深底浅线。**
+
+于是把 §13 那套"跟随 Rhino 视口色"整个删掉，`Icons.cs` 里不再有 `Dark` / `_dark` / 视口色读取，
+九个令牌全部是 `static readonly` 常量：
+
+| 令牌 | 值 | 用途 |
+|---|---|---|
+| `Tile` | `#17171E` | 电池图标底 |
+| `Edge` | `#3C3C48` | 电池图标边 |
+| `Ink` | `#EDEBE4` | 主笔画 |
+| `Card` | `#24242E` | 数据卡片底（比 `Tile` 亮一档，和"动作"区分） |
+| `CardEdge` | `#4C4C5A` | 数据卡片边 |
+| `Muted` / `Faint` | `#A8A8B4` / `#72727E` | 次级 / 弱化笔画 |
+| `Screen` | `#0A0A10` | 内屏（比底更暗） |
+| `ScreenInk` | `#EDEBE4` | 屏内内容 |
+| `Green` / `Pink` | `#10B363` / `#FD7AB4` | 强调色（深底上调亮一档） |
+
+跟随主题这条路走过两次都是坑：跟到深色时整排在浅面板上变黑块（v0.28），
+浅色档要画深字、又和遗留的写死深底配成黑底黑字（v0.28.1）。
+图标自带深色底之后，面板是浅是深都不影响可读性，也就不需要再判断宿主。
+
+### 验证
+
+口径不变（逐只图标：cover ≥ 4%、maxΔ ≥ 80），但 `GHCE_ICON_THEME` 现在只切**对照图的背景**，
+不切调色板 —— 两张图的内容一致，正好证明"面板深浅都不影响"。
+
+| 对照图背景 | 最弱覆盖 | 最弱反差 | 结果 |
+|---|---|---|---|
+| 浅（`#F0F0F0`，真实落点） | `data: Entities` 5.6% | `Canvas` maxΔ=130 | PASS |
+| 深（`#0F0F12`） | 同上（调色板固定） | 同上 | PASS |
+
+## 17. 运行时改为"画面优先"，撤销常驻 HUD（v0.29.0）
+
+### 为什么
+
+HUD 占左侧 296px（`#stage{padding-left:312px}`），每 500ms 写一次 DOM，展示的是 rev / ops / draw ms 这类**只对开发者有意义**的数字。
+对"作品长什么样"它没有贡献，却永久压缩画布，还会在低端机上制造无意义的布局抖动。
+
+同时把播放控制撤掉了：暂停 / 重置 / 重启 / 清屏都是**作品规则**，应该由 GH 的 `Event Trigger` 定义，
+而不是由运行时替使用者决定面板上该有哪几个按钮。
+
+### 改成什么
+
+```
+默认：只有画面。画布铺满窗口，没有任何常驻 UI。
+H    ：唤出左下角开发面板（导出按钮 / 错误 / 一行状态），再按 H 收起。
+出错 ：底部浮一条提示，4 秒自动消失；正常播放时画面上一个字都没有。
+```
+
+- `updateDev()` 在面板关闭时**一次 DOM 写入都不做**（早期版本隐藏了面板还每 500ms 刷 10 个节点）。
+- 键盘只保留 `H`；`1–8` 切场景、`R` 重连只在模拟桥（开发环境）里生效，接真 GH 时连这层键盘都不存在 ——
+  否则会和作品自己定义的 key 事件抢键。
+- 导出能力一个没少，只是搬进了开发面板。
+
+### 验证
+
+| 套件 | 结果 |
+|---|---|
+| `verify.mjs` | 64/64（"模拟桥下显示场景按钮"改成"默认没有常驻面板（画面不被挤压）"，四档视口加断言 `dev.hidden === true`、`stage.paddingLeft === '0px'`） |
+| `verify-3d.mjs` | 17/17 |
+| `replay-csharp.mjs` / `replay-3d.mjs` | 15/15 + 6/6 |
+| `verify-plugin-serve.mjs` | 7/7（断言改成"接真 GH 时默认不出现任何面板"） |
+
+截图：`docs/shots/v029-artwork-first.png`（默认画面）、`v029-dev-panel.png`（H 唤出）。
+
+安装：0.29.0，4,090,368 bytes，md5 `5B2F67085F4E`。
+
+## 18. 运行时表达式 + 事件写变量（v0.30.0）
+
+### 一句话
+
+事件不再只能说 8 个动词。现在它只做一件事 —— **写变量**；谁读这个变量、最后变成宽度还是透明度，由表达式在浏览器里每帧算。
+
+```text
+click ─► Event Rule ─► v_w (0/1) ─► Bind(width = 1.5 + 6·v_w) ─► Draw Path ─► Render Output
+```
+
+### 协议增量（V0.1 内，向后兼容）
+
+| op / 字段 | 内容 |
+|---|---|
+| `var.upsert` / `var.remove` | 文档级变量。`doc.reset` 清空；重连快照按定义初值重建 |
+| `event.upsert.value.writes` | `[{var, op: set\|toggle\|add, value}]`。与旧 `action` 并存，缺 `action` 也合法 |
+| `cmd.upsert.value.bind` | `{ width: <ast>, opacity: <ast> }`，属性名 → 表达式树 |
+
+表达式节点：`const` / `var` / `time` / `add` / `sub` / `mul` / `div` / `min` / `max` / `sin` / `abs` / `clamp01`。
+**是 AST 不是 JS 字符串** —— 浏览器不 `eval`、不 `new Function`；白名单外的树整体返回 NaN，绘制回落静态值。
+
+### 运行时改动
+
+- `runtime/src/expr.js`（新）：求值 + `exprUsesTime()` + `exprVars()`。
+- `doc.js`：`vars` 表、`var.*` op、`cmd.bind` 规范化；`cmd` 变动时重算 `timeBinding`。
+- `renderer2d.js`：绘制前求值，结果只进局部变量 —— **不写回 cmd**（否则导出、SVG、下一帧 diff 会拿到脏值）。
+- `events.js`：`writes` 先执行，再走旧 `action`；写变量后置 `varsDirty`。
+- `main.js`：`timeBinding` 每帧重绘；`varsDirty` 消费一次。
+
+### GH 侧（5 只电池 + 1 个数据类型）
+
+| 电池 | 输入 | 输出 | 备注 |
+|---|---|---|---|
+| `Runtime Var` | Name, Initial | Expression | 名字是唯一身份；初值在 `doc.reset` 时恢复 |
+| `Runtime Time` | Scale, Offset | Expression | 浏览器时钟，GH 不求值 |
+| `Runtime Math` | A, B, Op(1–8) | Expression | 1 add / 2 sub / 3 mul / 4 div / 5 min / 6 max / 7 sin / 8 clamp01 |
+| `Bind` | Commands, Property(1–2), Expression | Commands | 1 stroke width / 2 opacity |
+| `Event Rule` | Commands, Event, Variable, Write(1–3), Value, Enable | Commands | 1 set / 2 toggle / 3 add；`key:a` 写法省掉 Detail 端口 |
+
+新数据类型 `GHCE Expression`（`GHCE / Data`，带图标）；数字直接连表达式端口会转成常量。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| 运行时 `verify.mjs` | **74/74**（新增 9 项：绑定到达、变量初值、变量参与求值、时间绑定、逐帧重绘标记、点击写变量、表达式重算、**rev 不变**、像素证据 8644→34731、指令本体未被污染） |
+| 三维 / 回放 | 17/17 + 15/15 + 6/6 |
+| 探针 | 36 只电池 / 13 个数据类型 / **49 个 GUID 唯一**；patch 断言 `bind=True writes=True var=True` |
+| 图标反差 | 最弱覆盖 4.5%（`Runtime Math`），最弱反差 122（`Bind`），双主题 PASS |
+
+安装：0.30.0，4,113,408 bytes，md5 `E72DAB0DA317`（含"文本直连变量名"那次小改后的终版）。
+
+## 19. R1.5：绑定扩面 + 指针事件 + 三维时长（v0.30.1）
+
+0.30.0 只绑了宽度和不透明度，等于 P0-A 的验收（"半径呼吸 + 颜色脉冲"）只交了半张。这一版补齐。
+
+### 绑定属性：2 → 4
+
+| 属性 | 语义 |
+|---|---|
+| `width` | 描边宽度（原有） |
+| `opacity` | 不透明度（原有） |
+| `hue` | **色相 0–1**。保留底色的饱和度与明度，只换色相；底色是灰/白（饱和度 < 0.12）时自动补 0.75，否则换色相看不出来 |
+| `scale` | **缩放**。绕 `transform.pivot`，所以"半径呼吸"不必生成 morph 帧 |
+
+色相选的是 HSL 而不是 RGB 三通道：一个表达式就能写循环，端口也少两个。要更自由再补 RGB。
+
+### 表达式算子：8 → 11
+
+`gt`（A>B→1/0）、`lt`（A<B→1/0）、`noise`（一维值噪声 0–1，格点 hash + smoothstep）。
+另加 `select(cond, a, b)` 节点，配套两只电池：
+
+| 电池 | 输入 | 说明 |
+|---|---|---|
+| `Runtime Remap` | X, In(Interval), Out(Interval) | 在 GH 侧拼成 `out0 + (x-in0)/(in1-in0)*(out1-out0)`，**运行时不多一个算子** |
+| `Runtime Select` | Condition, A, B | 条件非 0 取 A。条件一般来自 Math 的 9/10 |
+
+### 事件源：3 → 9
+
+`click` / `dblclick` / `key:a` / `pointerdown` / `pointerup` / `pointermove` / `enter` / `leave` / `wheel`。
+指针事件走同一条派发路径；真正的成本控制仍在 `varsDirty`，不在派发。
+
+### 三维：去掉 1.5 秒魔数
+
+`Transform 3D` 新增 `Duration`（默认 1.5），进 `cmd3d` 的 `xform.duration`；`scene3d.js` 读它。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `verify.mjs` | **82/82**（新增 8 项：色相函数、缩放随 t 变化、色相随 t 变化、pointerdown 写变量、缩放表达式=4、rev 不变、绿色像素 9616→23972、pointerup 复位） |
+| 三维 / 回放 | 17/17 + 15/15 + 6/6 |
+| 探针 | 38 只电池 / 13 数据类型 / **51 个 GUID 唯一**；`patch3d` 断言加 `dur=True` |
+
+安装：0.30.1，4,122,112 bytes，md5 `07A622DBD3F7`。
+
+## 20. P0-B：Mark（v0.31.0）
+
+### 一句话
+
+同一组曲线，从"画一条线"变成"落很多笔"。Mark 不是新数据类型，也不新增协议 op —— 它就是**一批普通 DrawCommand 共用一份印章几何**。
+
+```
+Curve → Path Input → Mark Along Path → Style Map → Stroke Style → Render Output
+                          ↑
+                   Brush（圆点 / 短线 / 方块 / 三角 / 弧，或任意曲线）
+```
+
+### 三只电池
+
+| 电池 | 输入（≤6） | 输出 | 要点 |
+|---|---|---|---|
+| `Brush` | Curve(可选), Shape 1–5, Size, Aspect, Angle | Brush, Info | 局部坐标、原点居中、归一化到 Size；曲线优先于内置形状 |
+| `Mark Along Path` | Paths, Brush, Spacing, Rotate 1–4, Angle, Layer | Commands, Info | 一条标记一条指令，几何共享 |
+| `Style Map` | Commands, Property 1–4, In, Out, Bias | Commands, Info | 按沿程位置 `u` 映射，不喂数值列表 |
+
+### 关键决定
+
+- **位置与朝向只进矩阵**，不烘进几何。实测 404 条标记 → `geom.upsert=1`、整帧 200 KB；探针的 101 条标记整帧 42 KB。
+- **`Spacing` 取"总长 ÷ 整数份"**：原样用间距会把零头留到末端，排线一眼看出不均匀。闭合路径不重复首点，开放路径两端都有标记。
+- **命令 id = 电池 InstanceGuid + 源路径 id + 序号**。只用"源路径 + 序号"时，同一条路径上两只不同间距的 Mark 会撞 id 互相顶掉。
+- **闭合印章默认 fill**：圆点画成空心圈是这类工具最典型的"这不是我要的"；`Fill Style` 仍可覆盖。
+- **`Style Map` 只动 mark 指令**（`cmd.MarkU ≥ 0`），把 `Draw Path` 的指令混进来时原样返回，避免"整幅图被一起放大"。
+- `MarkU` 只活在 GH 侧，不进协议：浏览器不需要知道某条标记来自路径的哪一段。
+
+### 顺手修的一个真 bug
+
+做五条对照带时发现：`doc.reset` 早先是 `Object.assign(this.canvas, op.canvas)`，没带的字段会**保留上一件作品的设置**。从 `fade` 场景切到普通场景，`clearMode` 一直是 fade，画面开始叠影 —— 而 GH 的 `Canvas` 电池根本不发 `clearMode`，所以接真 Rhino 必现。
+
+改成 `this.canvas = { ...DEFAULT_CANVAS, ...(op.canvas || {}) }`，并加一条回归断言：先进 fade 场景、再进普通场景，`clearMode === 'clear'`。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `verify.mjs` | **89/89**（新增 7 项：几何去重、矩阵沿路径分布、尺寸随位置增长、整帧 < 400 KB、五条带各有墨、墨量至少三档、`clearMode` 不残留） |
+| `verify-3d.mjs` / `replay-csharp` / `replay-3d` | 17/17 + 15/15 + 6/6 |
+| 探针 | 41 只电池 / 13 数据类型 / **54 个 GUID 唯一**；Mark 数学层 11 组断言；`mark patch: 101 marks · geom.upsert=1 · cmd.upsert=101 · 42,345 bytes` |
+
+截图：`docs/shots/v031-marks.png`（五种画法：线 / 点描 / 书锋 / 排线 / 散点）。
+
+安装：0.31.0，4,134,400 bytes，md5 `1DACDDD2FE9B`。
+
+> 安装踩坑：Rhino 正在运行且已加载 `.gha` 时，直接覆盖复制可能得到**全零文件**（大小对、内容为 0），
+> 探针报 `Bad IL format`。改法是先重命名旧文件再复制，**复制后检查文件头是 `MZ`**。
+
+## 21. P1-A：Behavior Graph（v0.32.0）
+
+### 一句话
+
+实体不再有"行为预设"，只有三个动作：**读状态 → 算 → 写状态**。
+分裂、继承、停留、留痕都不是引擎认识的词，是这套规则的组合结果。
+
+```
+Blueprint → Look → Write State ×N → Spawn → Destroy → Render Output
+                        ↑            ↑
+                   Read State ─ Runtime Math ─┘
+```
+
+### 四只电池
+
+| 电池 | 输入（≤6） | 输出 | 要点 |
+|---|---|---|---|
+| `Read State` | Slot 1–11, Name(可选) | Expression | 返回的是"每个实例读自己"的表达式树，能接进现有 Runtime Math / Remap / Select |
+| `Write State` | Entities, Slot, Expression, When(可选), Op 1/2 | Entities | 一条 = 一个赋值；接几条就是几行代码，顺序即执行顺序 |
+| `Spawn` | Entities, When, Count, Spread, Max Gen, Max Pop | Entities | **上升沿**生成；子代继承父代全部状态 |
+| `Destroy` | Entities, When, Keep | Entities | `Keep > 0` 时留 N 个残影（留痕） |
+
+槽位：`x y vx vy u size alpha aux` 可写，`age index gen` 只读。
+
+### 关键决定
+
+- **写谁谁归你**：写了 `x`/`y` 就不再从曲线取样；写了 `u` 就不再自增。否则"自定义弹簧"和"沿曲线跑"会互相覆盖，用户看到的是半抖半走的画面。
+- **上升沿而不是每帧**：条件持续为真时每帧生成，一秒内人口就炸到上限 —— 这种"看起来能动、其实不可控"的行为不该是默认。
+- **继承是默认，差异靠表达式**：子代 `age=0 / gen+1 / index++`，其余全部继承。要"每个子代不一样"就读 `index` 或 `gen` 自己算，引擎不掷骰子 —— 与 v0.15 删掉随机种子的立场一致。
+- **`program` 不进定义指纹**：拖一根滑条改系数不该把粒子群清空；`count/speed/lifetime/phase/trail` 变了才重建。
+- **程序只在 GH 侧编译**：一条指令的表达式绑定可以逐帧改，但"行为"是定义，改定义本来就要重新求解。
+- **残影不进 patch**：它是运行时状态，不是几何；`doc.reset` / `restart` 一并清空。
+
+### 验证
+
+| 项 | 结果 |
+|---|---|
+| `verify.mjs` | **99/99**（新增 10 项：程序到达、`ownsXY/ownsU`、人口阶梯 72→168、销毁与残影 48→144、代数上限、固定步长可复现、`rev` 不变） |
+| `verify-3d` / `replay-csharp` / `replay-3d` | 17/17 + 15/15 + 6/6 |
+| 探针 | 45 只电池 / 13 数据类型 / **58 个 GUID 唯一**；`program` 的 4 组断言（指纹、深拷贝、patch 字段、`state`/`dt` 节点） |
+
+人口阶梯是这一版最硬的一条：24 个初代在 1.0s 各分裂一次 → 72；子代在 2.0s 再分裂 → 168；
+第三代被 `MaxGen=2` 挡住；子代 6s 到龄销毁 → 120；孙代 7s 销毁 → 24，残影 144 个。
+
+截图：`docs/shots/v032-behavior.png`。
+
+安装：0.32.0，4,151,296 bytes，md5 `535926B8C385`。

@@ -14,21 +14,21 @@ namespace GHCE.Components
     public class DrawProgressComponent : GH_Component
     {
         public DrawProgressComponent()
-            : base("Draw Progress", "Progress", "沿路径逐步显现：progress + spread", "GHCE", "Drawing") { }
+            : base("Draw Progress", "Progress", "Progressive reveal along paths: progress and spread", "GHCE", "Drawing") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000a8");
         protected override Bitmap Icon => Icons.DrawProgress;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "来自 Draw Path", GH_ParamAccess.list);
-            p.AddNumberParameter("Progress", "P", "0-1：整组画到哪", GH_ParamAccess.item, 1.0);
-            p.AddNumberParameter("Spread", "S", "0-1：每条之间的错开程度，0 = 同时", GH_ParamAccess.item, 0.0);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands from Draw Path", GH_ParamAccess.list);
+            p.AddNumberParameter("Progress", "P", "0-1: how far the whole group is drawn", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Spread", "S", "0-1: stagger between paths. 0 draws them together", GH_ParamAccess.item, 0.0);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "带 reveal 的指令", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands with reveal applied", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)

@@ -23,7 +23,7 @@ namespace GHCE.Components
     public class EventTriggerComponent : GH_Component
     {
         public EventTriggerComponent()
-            : base("Event Trigger", "Event", "点击 / 按键 → 对这组指令执行动作", "GHCE", "Input") { }
+            : base("Event Trigger", "Event", "Maps pointer and key events to actions on a set of commands", "GHCE", "Input") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000e6");
         protected override Bitmap Icon => Icons.EventTrigger;
@@ -31,23 +31,23 @@ namespace GHCE.Components
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
             p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds",
-                "这条规则作用的指令（任意组合、任意几条）。输出仍是这些指令，串在管道里",
+                "Commands this rule applies to. The same commands are passed through",
                 GH_ParamAccess.list);
-            p.AddTextParameter("Event", "Event", "click / dblclick / key（默认 click）", GH_ParamAccess.item, "click");
+            p.AddTextParameter("Event", "Event", "click, dblclick or key. Defaults to click", GH_ParamAccess.item, "click");
             p.AddTextParameter("Action", "Action",
-                "逐指令：toggle 显隐切换 · show 显示 · hide 隐藏 · restart 变换重演\n" +
-                "整屏/时钟：clear 清屏 · clear-region 擦一块 · reset-time 时间归零 · toggle-play 播放暂停",
+                "Per command: toggle visibility, show, hide, restart the transform\n" +
+                "Global: clear the canvas, clear a region, reset time, or toggle playback",
                 GH_ParamAccess.item, "toggle");
             p.AddTextParameter("Detail", "Detail",
-                "clear-region 填 \"x,y,w,h\"（页面坐标）；key 填键名（如 a / Space，留空 = 任意键）；其它动作忽略",
+                "For clear-region supply \"x,y,w,h\" in page pixels; for key supply a key name such as a or Space",
                 GH_ParamAccess.item);
-            p.AddBooleanParameter("Enable", "On", "关掉时不发这条规则（指令原样通过）", GH_ParamAccess.item, true);
+            p.AddBooleanParameter("Enable", "On", "Disables this rule; commands pass through untouched", GH_ParamAccess.item, true);
             p[3].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "带事件规则的指令", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands carrying the event rule", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -75,19 +75,19 @@ namespace GHCE.Components
             if (Array.IndexOf(EventDef.Events, ev) < 0)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                    $"Event 只能是 {string.Join(" / ", EventDef.Events)}，收到 \"{ev}\" 已回退 click");
+                    $"Event must be one of {string.Join(" / ", EventDef.Events)}. Received \"{ev}\" and fell back to click");
                 ev = "click";
             }
             if (Array.IndexOf(EventDef.Actions, action) < 0)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                    $"Action 只能是 {string.Join(" / ", EventDef.Actions)}，收到 \"{action}\" 已回退 toggle");
+                    $"Action must be one of {string.Join(" / ", EventDef.Actions)}. Received \"{action}\" and fell back to toggle");
                 action = "toggle";
             }
             if (action == "clear-region" && CountNumbers(detail) < 4)
             {
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                    "clear-region 的 Detail 需要 4 个数：\"x,y,w,h\"（页面坐标）。这条规则不会生效");
+                    "clear-region Detail needs four numbers: \"x,y,w,h\" in page pixels. This rule will not run");
             }
 
             // 目标 = 这次喂进来的全部指令。身份用 targets 指纹，所以换个组合就是另一条规则，

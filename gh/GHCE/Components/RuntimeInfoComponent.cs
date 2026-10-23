@@ -14,7 +14,7 @@ namespace GHCE.Components
     public class RuntimeInfoComponent : GH_Component
     {
         public RuntimeInfoComponent()
-            : base("Runtime Info", "Info", "浏览器侧自检：帧率 / 对象数 / 绘制耗时 / 连接数", "GHCE", "Input") { }
+            : base("Runtime Info", "Info", "Runtime telemetry: frame rate, object count, draw cost, clients", "GHCE", "Input") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000ac");
         protected override Bitmap Icon => Icons.RuntimeInfo;
@@ -23,12 +23,12 @@ namespace GHCE.Components
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddNumberParameter("FPS", "FPS", "浏览器实际绘帧率", GH_ParamAccess.item);
-            p.AddIntegerParameter("Entities", "Ent", "运行时对象数", GH_ParamAccess.item);
-            p.AddNumberParameter("Draw ms", "Draw", "上一帧绘制耗时", GH_ParamAccess.item);
-            p.AddNumberParameter("Step ms", "Step", "上一帧模拟耗时", GH_ParamAccess.item);
-            p.AddIntegerParameter("Rev", "Rev", "运行时已应用的文档版本", GH_ParamAccess.item);
-            p.AddIntegerParameter("Clients", "Cli", "已连接的预览端数量", GH_ParamAccess.item);
+            p.AddNumberParameter("FPS", "FPS", "Actual frames per second", GH_ParamAccess.item);
+            p.AddIntegerParameter("Entities", "Ent", "Live object count", GH_ParamAccess.item);
+            p.AddNumberParameter("Draw ms", "Draw", "Last frame draw time", GH_ParamAccess.item);
+            p.AddNumberParameter("Step ms", "Step", "Last frame update time", GH_ParamAccess.item);
+            p.AddIntegerParameter("Rev", "Rev", "Document revision applied by the runtime", GH_ParamAccess.item);
+            p.AddIntegerParameter("Clients", "Cli", "Connected preview clients", GH_ParamAccess.item);
         }
 
         public override void AddedToDocument(GH_Document document)
@@ -48,8 +48,8 @@ namespace GHCE.Components
             bool fresh = RuntimeStat.Fresh;
             if (!fresh)
             {
-                Message = "无数据";
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "还没收到浏览器回传（预览窗是否打开？）");
+                Message = "No data";
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "No telemetry yet. Is the preview window open?");
             }
             else
             {

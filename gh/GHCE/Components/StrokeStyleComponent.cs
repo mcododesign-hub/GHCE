@@ -20,26 +20,26 @@ namespace GHCE.Components
     public class StrokeStyleComponent : GH_Component
     {
         public StrokeStyleComponent()
-            : base("Stroke Style", "Stroke", "改一批指令的描边（颜色 / 线宽 / 透明度 / 虚线 / 端点）", "GHCE", "Drawing") { }
+            : base("Stroke Style", "Stroke", "Override stroke on a batch of commands", "GHCE", "Drawing") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000e3");
         protected override Bitmap Icon => Icons.StrokeStyle;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "待改样式的绘图指令", GH_ParamAccess.list);
-            p.AddColourParameter("Colour", "Colour", "描边颜色（不接 = 保留）", GH_ParamAccess.item);
-            p.AddNumberParameter("Width", "Width", "线宽（像素，不接 = 保留）", GH_ParamAccess.item);
-            p.AddNumberParameter("Alpha", "Alpha", "描边不透明度 0-1（不接 = 保留）", GH_ParamAccess.item);
-            p.AddTextParameter("Dash", "Dash", "虚线，如 4,3；接空文本 = 改回实线；不接 = 保留", GH_ParamAccess.item);
-            p.AddTextParameter("Cap", "Cap", "端点：butt / round / square（不接 = 保留）", GH_ParamAccess.item);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands to modify", GH_ParamAccess.list);
+            p.AddColourParameter("Colour", "Colour", "Stroke color. Leave empty to keep the current value", GH_ParamAccess.item);
+            p.AddNumberParameter("Width", "Width", "Stroke width in pixels. Leave empty to keep the current value", GH_ParamAccess.item);
+            p.AddNumberParameter("Alpha", "Alpha", "Stroke alpha 0-1. Leave empty to keep the current value", GH_ParamAccess.item);
+            p.AddTextParameter("Dash", "Dash", "Dash pattern, e.g. 4,3. Empty text restores a solid line", GH_ParamAccess.item);
+            p.AddTextParameter("Cap", "Cap", "Line cap: butt, round or square", GH_ParamAccess.item);
 
             for (int i = 1; i <= 5; i++) p[i].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "新指令（原指令不被改写）", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "New commands. The originals are left untouched", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -64,7 +64,7 @@ namespace GHCE.Components
                 if (cap != "butt" && cap != "round" && cap != "square")
                 {
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Warning,
-                        $"Cap 只能是 butt / round / square，收到 \"{cap}\" 已忽略");
+                        $"Cap must be butt, round or square. Received \"{cap}\" and ignored it");
                     hasCap = false;
                 }
             }
@@ -97,7 +97,7 @@ namespace GHCE.Components
             if (hasAlpha) bits.Add($"α {Clamp01(alpha):0.##}");
             if (hasDash) bits.Add(dashArr == null ? "solid" : $"dash {string.Join(",", dashArr)}");
             if (hasCap) bits.Add(cap);
-            Message = bits.Count == 0 ? "未改任何项" : string.Join(" · ", bits);
+            Message = bits.Count == 0 ? "Nothing was modified" : string.Join(" · ", bits);
         }
 
         static double Clamp01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;

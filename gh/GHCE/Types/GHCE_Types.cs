@@ -119,7 +119,25 @@ namespace GHCE.Types
         /// </summary>
         public double[] Proj;
 
-        public PathDef Duplicate() => (PathDef)MemberwiseClone();
+        /// <summary>
+        /// 仿射帧序列（v0.21）：N*6 个页面矩阵，由 Transform 电池写。
+        /// 放在 Path 上而不是直接挂在 Cmd 上，是因为 Transform 工作在**几何层** ——
+        /// 它不关心这条路径最后被画成什么样式，只负责"这条几何在时间上怎么变"。
+        /// Draw Path 才把这三样（几何 / 矩阵帧 / 顶点帧）合成为一条绘图指令。
+        /// </summary>
+        public double[] MatrixFrames;
+        public int MatrixN;
+
+        /// <summary>单个静态矩阵（6 个数）：只给了一个 Xform 时用它，走老的 transform.matrix 路径，不建轨道。</summary>
+        public double[] Matrix;
+
+        /// <summary>顶点帧序列（v0.21）：由 Morph 电池写。与 MatrixFrames 二选一，不串联。</summary>
+        public MorphDef Morph;
+
+        public PathDef Duplicate()
+        {
+            return (PathDef)MemberwiseClone();
+        }
     }
 
     public sealed class CommandDef
@@ -133,7 +151,15 @@ namespace GHCE.Types
         public bool Visible = true;
         public double Opacity = 1.0;
         public double Reveal = 1.0;      // Stroke Reveal：0..1，沿路径画到哪
-        public TrackDef Track;           // 时间轨：帧序列 + 时长/循环/缓动（v0.16）
+        public TrackDef Track;           // 时间轨：帧序列 + 区间/缓动（v0.18）
+        public MorphDef Morph;           // 几何变形帧序列（v0.19）：任意参数扫成的 N 份同拓扑几何
+
+        /// <summary>
+        /// 全局时间轴。只由 Timeline 电池写，且同一帧里每条指令的值相同；
+        /// PatchBuilder 取第一份非空值发一条 `timeline.set`，所以它搭在 cmd 上只是为了
+        /// 少一个端口，语义上属于文档级。
+        /// </summary>
+        public TimelineDef Timeline;
 
         // 变换（PSR）：位置 / 缩放 / 旋转 + 锚点
         public double MoveX, MoveY;
@@ -156,6 +182,21 @@ namespace GHCE.Types
         /// </summary>
         public List<EventDef> Events;
 
+        /// <summary>
+        /// 属性绑定（v0.30）：属性名 → 表达式。绘制时求值，不写回本对象。
+        /// 目前支持 width / opacity 两个属性 —— 先把一条路走通，再谈颜色与进度。
+        /// </summary>
+        public Dictionary<string, RuntimeExprDef> Binds;
+
+        /// <summary>
+        /// 这条指令在源路径上的位置，0..1（v0.31，Mark 专用）。
+        ///
+        /// 为什么不进协议：它只是 GH 侧 Style Map 的输入 —— "越往后越粗" 这种映射
+        /// 在求解期就算完了，浏览器不需要知道某个标记来自路径的哪个位置。
+        /// 小于 0 表示这条指令不是 Mark（Draw Path 生成的），Style Map 会跳过它。
+        /// </summary>
+        public double MarkU = -1.0;
+
         public StrokeDef Stroke = new StrokeDef();
         public FillDef Fill = new FillDef();
         public double PointSize = 3.0;
@@ -167,6 +208,11 @@ namespace GHCE.Types
             c.Fill = Fill.Duplicate();
             if (LayerDef != null) c.LayerDef = LayerDef.Duplicate();
             if (Track != null) c.Track = Track.Duplicate();
+            if (Binds != null)
+            {
+                c.Binds = new Dictionary<string, RuntimeExprDef>(Binds.Count);
+                foreach (var kv in Binds) c.Binds[kv.Key] = kv.Value?.Duplicate();
+            }
             if (Events != null)
             {
                 c.Events = new List<EventDef>(Events.Count);
@@ -211,6 +257,110 @@ namespace GHCE.Types
     /// 动态对象蓝图（阶段 2）。字段与 docs/protocol-v0.1.md 的 Entity 定义一一对应。
     /// GH 只描述"怎么活"，运行时自己持有 age / u / 拖尾这些状态。
     /// </summary>
+    /// <summary>
+    /// 一条状态写入：每个固定步对每个实例执行一次。
+    /// op 只有 set / add —— 行为本身由表达式决定，不由算子表决定。
+    /// </summary>
+    public sealed class EntityStepDef
+    {
+        public string Slot;              // x / y / vx / vy / u / size / alpha / aux / index / gen
+        public string Op = "set";        // set | add
+        public RuntimeExprDef Expr;
+        public RuntimeExprDef When;      // 非 0 才执行；null = 每步都执行
+
+        public EntityStepDef Duplicate() => new EntityStepDef
+        {
+            Slot = Slot, Op = Op,
+            Expr = Expr?.Duplicate(), When = When?.Duplicate()
+        };
+
+        public Dictionary<string, object> ToJson()
+        {
+            var d = new Dictionary<string, object> { ["slot"] = Slot, ["op"] = Op };
+            if (Expr != null) d["expr"] = Expr.ToJson();
+            if (When != null) d["when"] = When.ToJson();
+            return d;
+        }
+
+        public string Key() => $"{Slot}/{Op}/{Expr?.Key()}/{When?.Key() ?? "-"}";
+    }
+
+    /// <summary>
+    /// 实例状态程序（v0.32）。三件事：**每步写状态**、**条件满足时生成**、**条件满足时销毁**。
+    ///
+    /// 为什么不是"行为预设 + 参数"：预设等于替用户决定可能性的全集。
+    /// 这里只有"读状态 → 算 → 写状态"，分裂/继承/停留/留痕都是这套规则组合出来的结果。
+    /// </summary>
+    public sealed class EntityProgramDef
+    {
+        public List<EntityStepDef> Steps = new List<EntityStepDef>();
+
+        // 生成：条件上升沿触发一次，避免条件持续为真时每帧爆人口
+        public RuntimeExprDef SpawnWhen;
+        public int SpawnCount = 1;
+        public double SpawnSpread;       // 子代绕父代铺开的半径（像素）
+        public int MaxGen = 3;           // 0 = 不限制代数
+        public int MaxPop;               // 0 = 只用 Blueprint 的 Count
+
+        // 销毁：留痕 = 最后 N 个状态保留成静态残影
+        public RuntimeExprDef DestroyWhen;
+        public int Keep;
+
+        public EntityProgramDef Duplicate()
+        {
+            var p = new EntityProgramDef
+            {
+                SpawnWhen = SpawnWhen?.Duplicate(),
+                SpawnCount = SpawnCount,
+                SpawnSpread = SpawnSpread,
+                MaxGen = MaxGen,
+                MaxPop = MaxPop,
+                DestroyWhen = DestroyWhen?.Duplicate(),
+                Keep = Keep,
+            };
+            foreach (var s in Steps) p.Steps.Add(s?.Duplicate());
+            return p;
+        }
+
+        public bool IsEmpty => Steps.Count == 0 && SpawnWhen == null && DestroyWhen == null;
+
+        public string Key() =>
+            string.Join(",", Steps.ConvertAll(s => s.Key()))
+            + "|" + (SpawnWhen?.Key() ?? "-") + $"#{SpawnCount}@{SpawnSpread:0.###}g{MaxGen}p{MaxPop}"
+            + "|" + (DestroyWhen?.Key() ?? "-") + $"k{Keep}";
+
+        public Dictionary<string, object> ToJson()
+        {
+            var d = new Dictionary<string, object>();
+            if (Steps.Count > 0)
+            {
+                var arr = new List<Dictionary<string, object>>(Steps.Count);
+                foreach (var s in Steps) arr.Add(s.ToJson());
+                d["steps"] = arr;
+            }
+            if (SpawnWhen != null)
+            {
+                d["spawn"] = new Dictionary<string, object>
+                {
+                    ["when"] = SpawnWhen.ToJson(),
+                    ["count"] = SpawnCount,
+                    ["spread"] = SpawnSpread,
+                    ["maxGen"] = MaxGen,
+                    ["maxPop"] = MaxPop,
+                };
+            }
+            if (DestroyWhen != null)
+            {
+                d["destroy"] = new Dictionary<string, object>
+                {
+                    ["when"] = DestroyWhen.ToJson(),
+                    ["keep"] = Keep,
+                };
+            }
+            return d;
+        }
+    }
+
     public sealed class EntityDef
     {
         // 身份与生存规则（Entity Blueprint 电池产出）
@@ -231,7 +381,15 @@ namespace GHCE.Types
         public bool Fade = true;
         public double Opacity = 1.0;
 
-        public EntityDef Duplicate() => (EntityDef)MemberwiseClone();
+        /// <summary>状态程序（v0.32）。null = 沿用 v0.15 的"沿曲线跑"。</summary>
+        public EntityProgramDef Program;
+
+        public EntityDef Duplicate()
+        {
+            var e = (EntityDef)MemberwiseClone();
+            if (Program != null) e.Program = Program.Duplicate();
+            return e;
+        }
     }
 
     /// <summary>
@@ -248,8 +406,13 @@ namespace GHCE.Types
         public int N;                    // 帧数
         public double[] Frames;          // N*6，页面坐标；null = 这条轨道只管生长
         public double[] Reveal;          // N 个 0..1；null = 不管生长
-        public double Duration = 1.0;    // 跑完一遍多少秒
-        public bool Loop = true;
+
+        // ---- 这条轨在全局时间轴上的位置（剪辑软件里的入点/出点）----
+        // 时长与循环不在这里：那是 Timeline 的事。一条轨只回答"我什么时候开始、什么时候结束"。
+        public double Start;             // 入点（秒）
+        public double End = -1;          // 出点（秒）；< = Start 表示"占满全局时长"
+        public bool Hidden;              // 该轨静默：不参与驱动，指令保持静态状态
+
         public double[] EaseX;           // 缓动曲线采样（归一化到 0..1），可为 null
         public double[] EaseY;
 
@@ -265,9 +428,175 @@ namespace GHCE.Types
     }
 
     /// <summary>
+    /// A live signal: random or noise, evaluated inside the browser at frame rate.
+    ///
+    /// This is the second path next to the Random/Noise components, which compute in GH.
+    /// The difference is where the number is produced:
+    ///   GH components     30 Hz, zero latency, but the whole downstream re-solves
+    ///   browser signal    60 Hz, costs GH nothing, arrives back through `stat` with ~100 ms lag
+    ///
+    /// Carries no samples, only the function: kind, seed, rate, coordinates.
+    /// </summary>
+    public sealed class SignalDef
+    {
+        public string Id;                // stable id; the runtime echoes values back under this key
+        public string Kind = "noise1";   // random / noise1 / noise2 / noise3
+        public int Seed;
+        public double Rate = 1.0;
+        public double[] Args;
+
+        public SignalDef Duplicate()
+        {
+            var s = (SignalDef)MemberwiseClone();
+            if (Args != null) s.Args = (double[])Args.Clone();
+            return s;
+        }
+    }
+
+    /// <summary>
+    /// 几何 morph：N 组**同拓扑**点缓冲，浏览器按时间在相邻帧之间插值顶点。
+    ///
+    /// 为什么这是"任意 slider 都能动画"的答案：运行时不认识 fillet / offset / 布尔，
+    /// 它只知道"第 k 帧的点在这里、第 k+1 帧的点在那里"。所以只要 GH 侧把某个参数
+    /// 扫一遍采样成 N 份几何，任何造型变化都能变成动画 —— 与矩阵插值同构，
+    /// 只是插值的对象从 6 个数变成 2·Count 个数。
+    ///
+    /// 唯一前提：**点数与顺序一致**。所以采样用固定点数（归一化参数取点），
+    /// 而不是按弦高，否则 offset 之后点数就变了。
+    /// </summary>
+    public sealed class MorphDef
+    {
+        public int N;                    // 帧数
+        public int Count;                // 每条曲线的点数（所有帧一致）
+        public double Step = 12;         // 每秒帧数：这段素材的自然时长 = (N-1)/Step
+        public double[] Frames;          // N*Count*2，页面坐标
+        public bool Closed;
+
+        public MorphDef Duplicate()
+        {
+            var m = (MorphDef)MemberwiseClone();
+            if (Frames != null) m.Frames = (double[])Frames.Clone();
+            return m;
+        }
+    }
+
+    /// <summary>
+    /// 实时信号：随机 / 噪声。
+    ///
+    /// 这里**不含任何采样值** —— 只有一个函数描述（哪种噪声、种子、速率、坐标偏移）。
+    /// 值由浏览器每帧算，因为"跟随时间变化"本质是 f(t)：
+    /// 传函数是几十字节，传 60 秒的采样是几十万字节，而且还卡在 GH 的求解频率上。
+    /// </summary>
+    /// <summary>
+    /// 全局时间轴：只有"整段多长、要不要循环"两件事。
+    /// 刻意不含任何具体动画 —— 那是 Track 的职责。这里放具体实例，就等于把
+    /// 播放头和素材混成一个东西，多轨错位排布就不可能表达。
+    /// </summary>
+    public sealed class TimelineDef
+    {
+        public double Duration = 8.0;    // 全局时长（秒）
+        public bool Loop = true;
+    }
+
+    /// <summary>
     /// 事件触发（阶段 3 D）。一次点击不需要 GH 重新求解 —— 规则发一次，浏览器自己执行。
     /// 选择性清屏（3 C）复用同一套机制，Action 填 clear-region。
     /// </summary>
+    /// <summary>
+    /// 运行时表达式：一棵在浏览器里求值的树，GH 只负责拼，不求值。
+    ///
+    /// 为什么是树不是字符串：GH 传来的东西一律当数据，浏览器不 eval、不 new Function；
+    /// 算子白名单之外的节点整体不成立，运行时回退到静态值。
+    ///
+    /// 节点：const / var / time / add / sub / mul / div / min / max / sin / abs / clamp01
+    /// </summary>
+    public sealed class RuntimeExprDef
+    {
+        public string Op = "const";
+        public double Value;          // const
+        public string Name;           // var 的变量名
+        public double Init;           // var 的声明初值（第一次 var.upsert 用）
+        public RuntimeExprDef A;
+        public RuntimeExprDef B;
+        public RuntimeExprDef C;      // select 的条件
+
+        public static RuntimeExprDef Const(double v) => new RuntimeExprDef { Op = "const", Value = v };
+        public static RuntimeExprDef Time() => new RuntimeExprDef { Op = "time" };
+        /// <summary>实例状态：x / y / vx / vy / u / age / index / size / alpha / aux / gen</summary>
+        public static RuntimeExprDef State(string slot) => new RuntimeExprDef { Op = "state", Name = slot };
+        /// <summary>固定步长（秒）。行为里做积分必须用它，不能用 time 差分。</summary>
+        public static RuntimeExprDef DeltaTime() => new RuntimeExprDef { Op = "dt" };
+        public static RuntimeExprDef Var(string name, double init) =>
+            new RuntimeExprDef { Op = "var", Name = name, Init = init };
+        public static RuntimeExprDef Bin(string op, RuntimeExprDef a, RuntimeExprDef b) =>
+            new RuntimeExprDef { Op = op, A = a, B = b };
+        public static RuntimeExprDef Unary(string op, RuntimeExprDef a) =>
+            new RuntimeExprDef { Op = op, A = a };
+
+        public RuntimeExprDef Duplicate() => new RuntimeExprDef
+        {
+            Op = Op, Value = Value, Name = Name, Init = Init,
+            A = A?.Duplicate(), B = B?.Duplicate(), C = C?.Duplicate()
+        };
+
+        public Dictionary<string, object> ToJson()
+        {
+            var d = new Dictionary<string, object> { ["o"] = Op };
+            switch (Op)
+            {
+                case "const": d["v"] = Value; break;
+                case "var": d["n"] = Name; d["i"] = Init; break;
+                case "state": d["n"] = Name; break;
+                case "time": break;
+                case "dt": break;
+                default:
+                    if (A != null) d["a"] = A.ToJson();
+                    if (B != null) d["b"] = B.ToJson();
+                    if (C != null) d["c"] = C.ToJson();
+                    break;
+            }
+            return d;
+        }
+
+        /// <summary>整棵树的稳定指纹，用于判断"绑定改没改"。</summary>
+        public string Key()
+        {
+            switch (Op)
+            {
+                case "const": return $"c{Value:0.#####}";
+                case "var": return $"v{Name}@{Init:0.#####}";
+                case "state": return "s:/" + Name;
+                case "time": return "t";
+                case "dt": return "dt";
+                default: return $"{Op}({(C == null ? "" : C.Key() + ",")}{(A == null ? "-" : A.Key())},{(B == null ? "-" : B.Key())})";
+            }
+        }
+
+        /// <summary>把树里所有 var 节点的 名字→初值 收集出来，PatchBuilder 据此发 var.upsert。</summary>
+        public void CollectVars(Dictionary<string, double> into)
+        {
+            if (into == null) return;
+            if (Op == "var" && !string.IsNullOrEmpty(Name) && !into.ContainsKey(Name)) into[Name] = Init;
+            A?.CollectVars(into);
+            B?.CollectVars(into);
+            C?.CollectVars(into);
+        }
+    }
+
+    /// <summary>一次事件对变量的写入。op：set / toggle / add。</summary>
+    public sealed class WriteDef
+    {
+        public string Var;
+        public string Op = "set";
+        public double Value;
+        public double Min = double.NegativeInfinity;
+        public double Max = double.PositiveInfinity;
+
+        public WriteDef Duplicate() => (WriteDef)MemberwiseClone();
+
+        public static readonly string[] Ops = { "set", "toggle", "add" };
+    }
+
     public sealed class EventDef
     {
         public string Id;
@@ -283,7 +612,18 @@ namespace GHCE.Types
         /// </summary>
         public string[] Targets = new string[0];
 
-        public static readonly string[] Events = { "click", "dblclick", "key" };
+        /// <summary>
+        /// 写变量（v0.30）。这是比 action 更通用的那条路：
+        /// 事件只改 doc.vars，谁读这个变量由表达式绑定决定。
+        /// 与 action 可以并存 —— 一个事件既切可见性、又改一个数值。
+        /// </summary>
+        public List<WriteDef> Writes;
+
+        public static readonly string[] Events =
+        {
+            "click", "dblclick", "key",
+            "pointerdown", "pointerup", "pointermove", "enter", "leave", "wheel"
+        };
 
         /// <summary>前三个是逐指令的，后三个是画布/时钟的（作用域写在端口说明里）</summary>
         public static readonly string[] Actions =
@@ -316,6 +656,11 @@ namespace GHCE.Types
         {
             var e = (EventDef)MemberwiseClone();
             e.Targets = Targets == null ? new string[0] : (string[])Targets.Clone();
+            if (Writes != null)
+            {
+                e.Writes = new List<WriteDef>(Writes.Count);
+                foreach (var w in Writes) e.Writes.Add(w?.Duplicate());
+            }
             return e;
         }
     }
@@ -330,7 +675,7 @@ namespace GHCE.Types
 
         public override bool IsValid => Value != null && Value.W > 0 && Value.H > 0;
         public override string TypeName => "GHCE Canvas";
-        public override string TypeDescription => "画布定义（尺寸 / 背景 / DPR）";
+        public override string TypeDescription => "Canvas definition: size, background, DPR";
 
         public override IGH_Goo Duplicate()
         {
@@ -366,7 +711,7 @@ namespace GHCE.Types
                                         && Value.Proj != null && Value.Proj.Length == 3;
 
         public override string TypeName => "GHCE Camera";
-        public override string TypeDescription => "世界 → 页面相机（页面尺寸 / 内边距 / 缩放）";
+        public override string TypeDescription => "World to page camera: page size, margin, scale";
 
         public override IGH_Goo Duplicate()
         {
@@ -379,7 +724,7 @@ namespace GHCE.Types
             if (Value == null) return "<null>";
             var p = Value.Proj;
             return p == null
-                ? $"{Value.W}x{Value.H} (未求解)"
+                ? $"{Value.W}x{Value.H} (not solved)"
                 : $"{Value.W}x{Value.H} · s {p[0]:0.###} · cam ({p[1]:0.#},{p[2]:0.#})";
         }
 
@@ -407,7 +752,7 @@ namespace GHCE.Types
 
         public override bool IsValid => Value != null && Value.XY != null && Value.XY.Length >= 2;
         public override string TypeName => "GHCE Path";
-        public override string TypeDescription => "已投影的路径数据（页面坐标）";
+        public override string TypeDescription => "Projected path data in page space";
 
         public override IGH_Goo Duplicate()
         {
@@ -451,7 +796,7 @@ namespace GHCE.Types
 
         public override bool IsValid => Value != null && !string.IsNullOrEmpty(Value.Id) && !string.IsNullOrEmpty(Value.GeomId);
         public override string TypeName => "GHCE Draw Command";
-        public override string TypeDescription => "绘图指令：几何引用 + 样式 + 层级 + 顺序";
+        public override string TypeDescription => "Draw command: geometry reference, style, layer, order";
 
         public override IGH_Goo Duplicate()
         {
@@ -497,7 +842,7 @@ namespace GHCE.Types
 
         public override bool IsValid => Value != null && Value.Path != null && !string.IsNullOrEmpty(Value.Id);
         public override string TypeName => "GHCE Entities";
-        public override string TypeDescription => "动态对象蓝图（运行时自己持有状态）";
+        public override string TypeDescription => "Entity blueprint. The runtime owns instance state";
 
         public override IGH_Goo Duplicate()
         {
@@ -555,7 +900,7 @@ namespace GHCE.Types
 
         public override bool IsValid => Value != null && Value.N >= 2 && Value.Frames != null && Value.Frames.Length >= Value.N * 6;
         public override string TypeName => "GHCE Track";
-        public override string TypeDescription => "时间轨（帧序列 / 时长 / 循环 / 缓动）";
+        public override string TypeDescription => "Timeline track: frame sequence, span, easing";
 
         public override IGH_Goo Duplicate()
         {
@@ -564,7 +909,10 @@ namespace GHCE.Types
         }
 
         public override string ToString() =>
-            Value == null ? "<null>" : $"{Value.N} 帧 · {Value.Duration:0.##}s{(Value.Loop ? " · loop" : "")}";
+            Value == null
+                ? "<null>"
+                : $"{Value.N} frames · {(Value.End > Value.Start ? $"{Value.Start:0.##}–{Value.End:0.##}s" : "full span")}"
+                  + (Value.Hidden ? " · muted" : "");
 
         public override bool CastFrom(object source)
         {
@@ -592,7 +940,7 @@ namespace GHCE.Types
                                         && !string.IsNullOrEmpty(Value.Action);
 
         public override string TypeName => "GHCE Event";
-        public override string TypeDescription => "事件触发规则（事件 → 动作）";
+        public override string TypeDescription => "Event rule: event to action";
 
         public override IGH_Goo Duplicate()
         {
@@ -626,7 +974,7 @@ namespace GHCE.Types
 
     public class Param_GHCE_Canvas : GH_Param<GHCE_Canvas>
     {
-        public Param_GHCE_Canvas() : base("Canvas", "Canvas", "画布定义", "GHCE", "Output", GH_ParamAccess.item) { }
+        public Param_GHCE_Canvas() : base("Canvas", "Canvas", "Canvas definition", "GHCE", "Data", GH_ParamAccess.item) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c1");
 
         // 自定义 Param 也会出现在 GH 标签页里，没有图标就是一块棋盘格
@@ -635,42 +983,131 @@ namespace GHCE.Types
 
     public class Param_GHCE_Camera : GH_Param<GHCE_Camera>
     {
-        public Param_GHCE_Camera() : base("Camera", "Camera", "世界 → 页面相机", "GHCE", "Drawing", GH_ParamAccess.item) { }
+        public Param_GHCE_Camera() : base("Camera", "Camera", "World to page camera", "GHCE", "Data", GH_ParamAccess.item) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c6");
         protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataCamera;
     }
 
     public class Param_GHCE_Path : GH_Param<GHCE_Path>    {
-        public Param_GHCE_Path() : base("Paths", "Paths", "路径数据", "GHCE", "Drawing", GH_ParamAccess.list) { }
+        public Param_GHCE_Path() : base("Paths", "Paths", "Path data", "GHCE", "Data", GH_ParamAccess.list) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c2");
         protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataPath;
     }
 
     public class Param_GHCE_Command : GH_Param<GHCE_Command>
     {
-        public Param_GHCE_Command() : base("Commands", "Commands", "绘图指令", "GHCE", "Drawing", GH_ParamAccess.list) { }
+        public Param_GHCE_Command() : base("Commands", "Commands", "Draw command", "GHCE", "Data", GH_ParamAccess.list) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c3");
         protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataCommand;
     }
 
     public class Param_GHCE_Entity : GH_Param<GHCE_Entity>
     {
-        public Param_GHCE_Entity() : base("Entities", "Entities", "动态对象蓝图", "GHCE", "Entity", GH_ParamAccess.list) { }
+        public Param_GHCE_Entity() : base("Entities", "Entities", "Entity blueprint", "GHCE", "Data", GH_ParamAccess.list) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c4");
         protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataEntity;
     }
 
+    public class GHCE_Signal : GH_Goo<SignalDef>
+    {
+        public GHCE_Signal() { }
+        public GHCE_Signal(SignalDef v) { Value = v; }
+
+        public override bool IsValid => Value != null;
+        public override string TypeName => "GHCE Signal";
+        public override string TypeDescription => "Live signal evaluated in the browser";
+
+        public override IGH_Goo Duplicate() =>
+            Value == null ? new GHCE_Signal() : new GHCE_Signal(Value.Duplicate());
+
+        public override string ToString() =>
+            Value == null ? "<null>" : $"{Value.Kind} · {(Value.Args == null ? 0 : Value.Args.Length)}D";
+
+        public override bool CastFrom(object source)
+        {
+            if (source is SignalDef d) { Value = d; return true; }
+            return false;
+        }
+
+        public override bool CastTo<Q>(ref Q target)
+        {
+            if (typeof(Q).IsAssignableFrom(typeof(SignalDef)))
+            {
+                target = (Q)(object)Value;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    public class Param_GHCE_Signal : GH_Param<GHCE_Signal>
+    {
+        public Param_GHCE_Signal() : base("Signal", "Signal", "Live signal evaluated in the browser", "GHCE", "Data", GH_ParamAccess.item) { }
+        public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c9");
+        protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataSignal;
+    }
+
     public class Param_GHCE_Track : GH_Param<GHCE_Track>
     {
-        public Param_GHCE_Track() : base("Track", "Track", "关键帧轨道", "GHCE", "Entity", GH_ParamAccess.item) { }
+        public Param_GHCE_Track() : base("Track", "Track", "Timeline track", "GHCE", "Data", GH_ParamAccess.item) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c5");
         protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataTrack;
     }
 
     public class Param_GHCE_Event : GH_Param<GHCE_Event>
     {
-        public Param_GHCE_Event() : base("Events", "Events", "事件触发规则", "GHCE", "Input", GH_ParamAccess.list) { }
+        public Param_GHCE_Event() : base("Events", "Events", "Event rule", "GHCE", "Data", GH_ParamAccess.list) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000c7");
         protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataEvent;
     }
+
+    /// <summary>运行时表达式的 Goo。GH 只负责拼这棵树，求值发生在浏览器。</summary>
+    public class GHCE_Expr : GH_Goo<RuntimeExprDef>
+    {
+        public GHCE_Expr() { }
+        public GHCE_Expr(RuntimeExprDef v) { Value = v; }
+
+        public override bool IsValid => Value != null && !string.IsNullOrEmpty(Value.Op);
+        public override string TypeName => "GHCE Expression";
+        public override string TypeDescription => "Runtime expression evaluated in the browser";
+
+        public override IGH_Goo Duplicate() =>
+            Value == null ? new GHCE_Expr() : new GHCE_Expr(Value.Duplicate());
+
+        public override string ToString() =>
+            Value == null ? "<null>" : Value.Key();
+
+        public override bool CastFrom(object source)
+        {
+            if (source is RuntimeExprDef d) { Value = d; return true; }
+            // 数字直接接到表达式端口 = 常量：少摆一颗电池
+            if (source is double n) { Value = RuntimeExprDef.Const(n); return true; }
+            if (source is int i) { Value = RuntimeExprDef.Const(i); return true; }
+            // 文本 = 变量名。方便在 Event Rule 里直接手写 v_w，不必非拖一颗 Runtime Var
+            if (source is string name && !string.IsNullOrWhiteSpace(name))
+            {
+                Value = RuntimeExprDef.Var(name.Trim(), 0);
+                return true;
+            }
+            return false;
+        }
+
+        public override bool CastTo<Q>(ref Q target)
+        {
+            if (typeof(Q).IsAssignableFrom(typeof(RuntimeExprDef)))
+            {
+                target = (Q)(object)Value;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    public class Param_GHCE_Expr : GH_Param<GHCE_Expr>
+    {
+        public Param_GHCE_Expr() : base("Expression", "Expr", "Runtime expression", "GHCE", "Data", GH_ParamAccess.item) { }
+        public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000ca");
+        protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataExpr;
+    }
+
 }

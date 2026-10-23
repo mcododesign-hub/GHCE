@@ -113,10 +113,13 @@ const s1 = await cdp.eval(`(() => {
   const G = window.GHCE;
   return { conn: G.client.state, rev: G.doc.rev, ...G.doc.stats(), dpr: G.renderer._dpr,
            canvasW: G.renderer.canvas.width, errs: document.getElementById('errs').textContent,
-           scenesVisible: !!document.getElementById('scenes').offsetParent };
+           hudGone: !document.getElementById('hud'),
+           devHidden: document.getElementById('dev').hidden,
+           stagePad: getComputedStyle(document.getElementById('stage')).paddingLeft };
 })()`);
 check('WS 已连接', s1.conn === 'open', s1.conn);
-check('模拟桥下显示演示场景按钮', s1.scenesVisible === true, s1.scenesVisible);
+// v0.29：运行时默认只有画面 —— 没有常驻 HUD，也不给画布留面板边距
+check('默认没有常驻面板（画面不被挤压）', s1.hudGone === true && s1.devHidden === true && s1.stagePad === '0px', { hudGone: s1.hudGone, devHidden: s1.devHidden, pad: s1.stagePad });
 check('收到 patch（rev>0）', s1.rev > 0, { rev: s1.rev });
 check('几何与指令已入库', s1.geoms > 0 && s1.cmds > 0, { geoms: s1.geoms, cmds: s1.cmds });
 check('backing store 按 DPR 放大', s1.canvasW >= 1440 * 2 - 4, { canvasW: s1.canvasW, dpr: s1.dpr });
@@ -300,6 +303,38 @@ check('三条蓝图并存（同一种语义，只差参数）',
   lv1.behaviors.includes('e_slow') && lv1.behaviors.includes('e_fast') && lv1.behaviors.includes('e_life'),
   lv1.behaviors);
 
+/* 8.5 时间轴：全局时长/循环在 Timeline，轨道只声明自己的区间 */
+const tlq = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const hiddenProbe = (() => {
+    const c = G.doc.cmds.get('c_ln1');
+    const was = c.track.hidden;
+    c.track.hidden = true;
+    const r = G.trackAt('c_ln1', 3.0);
+    c.track.hidden = was;
+    return r.matrix;
+  })();
+  return {
+    duration: G.doc.timeline.duration,
+    loop: G.doc.timeline.loop,
+    rotBefore: +G.trackAt('c_ln1', 0.5).u.toFixed(3),    // 入点 1.5 之前
+    rotMid: +G.trackAt('c_ln1', 3.0).u.toFixed(3),       // 1.5–4.5 的正中
+    rotAfter: +G.trackAt('c_ln1', 5.5).u.toFixed(3),     // 出点 4.5 之后
+    swingAt3: +G.trackAt('c_ln2', 3.0).u.toFixed(3),     // 另一条轨 3.5 才开始
+    swingMid: +G.trackAt('c_ln2', 4.75).u.toFixed(3),    // 3.5–6 的正中
+    hiddenMatrix: hiddenProbe,
+  };
+})()`);
+check('全局时间轴被接收（6s · loop）',
+  tlq.duration === 6 && tlq.loop === true, { duration: tlq.duration, loop: tlq.loop });
+check('入点之前停在首帧', tlq.rotBefore === 0, tlq.rotBefore);
+check('区间正中走到一半', Math.abs(tlq.rotMid - 0.5) < 0.03, tlq.rotMid);
+check('出点之后停在末帧', tlq.rotAfter === 1, tlq.rotAfter);
+check('同一时刻另一条轨还没开始（多轨错开）',
+  tlq.swingAt3 === 0 && Math.abs(tlq.swingMid - 0.5) < 0.03,
+  { at3s: tlq.swingAt3, at4_75s: tlq.swingMid });
+check('静默轨道不驱动（矩阵返回 null）', tlq.hiddenMatrix === null, tlq.hiddenMatrix);
+
 const paused = await cdp.eval(`(async () => {
   const G = window.GHCE;
   G.clock.pause();
@@ -360,7 +395,8 @@ const tl2 = await cdp.eval(`(() => {
     rev: G.doc.rev,
     t: +G.clock.time.toFixed(2),
     reveal: +G.trackAt('c_ln0').reveal.toFixed(3),
-    rot: G.trackAt('c_ln1').matrix,
+    // 显式取区间中点：这条轨的入点是 1.5s，靠"时钟走到哪"采样会在区间外读到首帧
+    rot: G.trackAt('c_ln1', 3.0).matrix,
   };
 })()`);
 
@@ -480,10 +516,12 @@ check('clear-region 只擦指定区域（框内透明、框外保留底色）',
 const psr = await cdp.eval(`(() => {
   const G = window.GHCE;
   const tr = G.doc.cmds.get('c_ln2').track;
+  // v0.18：一个周期 = 这条轨自己的 [start, end]，不再是轨道自带的 duration
+  const s = tr.start, e = tr.end;
   const fs = [];
-  for (let k = 0; k <= 8; k++) fs.push(+G.trackAt('c_ln2', (tr.duration * k) / 8).matrix[5].toFixed(2));
+  for (let k = 0; k <= 8; k++) fs.push(+G.trackAt('c_ln2', s + ((e - s) * k) / 8).matrix[5].toFixed(2));
   return {
-    duration: tr.duration,
+    span: +(e - s).toFixed(2),
     fs,
     max: Math.max(...fs),
     min: Math.min(...fs),
@@ -492,7 +530,7 @@ const psr = await cdp.eval(`(() => {
 })()`);
 check('时间轨能驱动位移（一个周期走完 0 → +48 → 0 → −48）',
   Math.abs(psr.max - 48) < 0.5 && Math.abs(psr.min + 48) < 0.5,
-  { duration: psr.duration, max: psr.max, min: psr.min, fs: psr.fs });
+  { span: psr.span, max: psr.max, min: psr.min, fs: psr.fs });
 check('运行时状态已回传给 GH（stat）', psr.statSent > 3, { statSent: psr.statSent });
 
 /* 10.6 变换锚点：画布真的绕"指定点"转，而不是绕原点 */
@@ -587,6 +625,381 @@ const vid = await cdp.eval(`(async () => {
 check('视频导出产出可用的 WebM/MP4',
   !!vid.mime && vid.size > 1000 && /webm|mp4/.test(vid.type || ''), vid);
 
+/* 12. v0.19 几何 morph：顶点插值（方 → 圆，非仿射变化） */
+const mo = await cdp.eval(`(async () => {
+  const G = window.GHCE;
+  G.selectScene('morph');
+  // 判据不能用 rev===1：mock 每次切场景都从 1 重新计数，连续切换时条件立刻成立，等于没等。
+  // 要等"只有新场景才会有的内容"出现。
+  const t0 = performance.now();
+  while (!G.doc.cmds.has('c_morph') && performance.now() - t0 < 4000) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+  G.clock.reset();
+
+  const c = G.doc.cmds.get('c_morph');
+  if (!c) return { noCmd: true, ids: [...G.doc.cmds.keys()].slice(0, 6), rev: G.doc.rev };
+  const m = c.morph;
+  if (!m) return { noMorph: true, keys: Object.keys(c), trackKeys: c.track ? Object.keys(c.track) : null };
+
+  const cx = G.doc.canvas.w / 2, cy = G.doc.canvas.h / 2;
+  const rad = (pts, i) => Math.hypot(pts[i * 2] - cx, pts[i * 2 + 1] - cy);
+
+  const p0 = G.resolveMorph(m, 0);
+  const pm = G.resolveMorph(m, 0.5);
+  const p1 = G.resolveMorph(m, 1);
+
+  return {
+    n: m.n, count: m.count,
+    // 45° 方向：方形半径 = √2·R，圆半径 = R。插值中点应当落在两者之间
+    r0: +rad(p0, 12).toFixed(1),
+    rm: +rad(pm, 12).toFixed(1),
+    r1: +rad(p1, 12).toFixed(1),
+    len: [p0.length, pm.length, p1.length],
+    closed: m.closed,
+  };
+})()`);
+check('morph 被接收（24 帧 × 96 点）', mo.n === 24 && mo.count === 96, mo);
+check('三帧点数一致（可一一对应）',
+  Array.isArray(mo.len) && mo.len.every((v) => v === mo.count * 2), mo.len);
+check('首帧是方形（45° 半径明显大于圆）', mo.r0 > mo.r1 * 1.3, { square: mo.r0, circle: mo.r1 });
+check('中点落在两帧之间（真的在插值，不是切帧）',
+  mo.rm > mo.r1 + 1 && mo.rm < mo.r0 - 1, { r0: mo.r0, mid: mo.rm, r1: mo.r1 });
+
+const f6 = await shot('morph');
+console.log('  screenshot:', f6);
+
+/* 13. v0.23 逐帧驱动：GH 每帧发新矩阵时的直通行为 */
+const lv = await cdp.eval(`(async () => {
+  const G = window.GHCE;
+  G.selectScene('random');
+  const t0 = performance.now();
+  while (!G.doc.cmds.has('c_tri') && performance.now() - t0 < 4000) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+  const a = G.doc.cmds.get('c_tri').transform.matrix.slice();
+  await new Promise(r => setTimeout(r, 450));
+  const c = G.doc.cmds.get('c_tri');
+  return {
+    changed: JSON.stringify(a) !== JSON.stringify(c.transform.matrix),
+    progress: c.transform.progress,
+    rev: G.doc.rev,
+    frames: G.client.metrics.patches,
+  };
+})()`);
+check('逐帧矩阵更新（模拟 GH 每帧求解）', lv.changed === true, { changed: lv.changed, rev: lv.rev });
+check('逐帧驱动时直通，不叠过渡缓动', lv.progress === 1, { progress: lv.progress });
+
+// 信号：GH 推定义 → 浏览器求值 → stat 回传。这里验证前半段（定义到达 + 求值随时间变）
+const sig = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const def = G.signals.get('sig_demo');
+  if (!def) return { missing: true, ids: [...G.signals.keys()] };
+  return {
+    kind: def.kind,
+    v0: +G.signalValue(def, 0).toFixed(4),
+    v2: +G.signalValue(def, 2).toFixed(4),
+    v5: +G.signalValue(def, 5).toFixed(4),
+    stable: G.signalValue(def, 2) === G.signalValue(def, 2),
+  };
+})()`);
+check('信号定义由 GH 推送并到达运行时', sig.missing !== true, sig);
+check('信号值随时间变化', sig.v0 !== sig.v2 && sig.v2 !== sig.v5,
+  { t0: sig.v0, t2: sig.v2, t5: sig.v5 });
+check('同一时刻求值稳定（可回传、可复现）', sig.stable === true, sig.stable);
+
+const f7 = await shot('random');
+console.log('  screenshot:', f7);
+
+/* 10.5 表达式绑定 + 事件写变量（v0.30）
+ *
+ * 这一节要证明的是"不重解 GH 也能变画面"：
+ *   点击 → 事件写变量 → 表达式重算属性 → 重绘
+ * 全程 doc.rev 不变 —— 一旦 rev 变了，就说明还是 GH 在出图，这条路没成立。 */
+await cdp.eval("window.GHCE.selectScene('binding')");
+await sleep(700);
+
+const b0 = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const cmd = G.doc.cmds.get('c_beat');
+  const ctx = { t: G.doc.time || 0, vars: G.doc.vars };
+  return {
+    hasBind: !!(cmd && cmd.bind && cmd.bind.width),
+    v: G.doc.vars.get('v_w'),
+    w: G.evalExpr(cmd.bind.width, ctx),
+    rev: G.doc.rev,
+    timeBinding: G.doc.timeBinding,
+    breath0: G.evalExpr(G.doc.cmds.get('c_breath').bind.width, { t: 0, vars: G.doc.vars }),
+    breath1: G.evalExpr(G.doc.cmds.get('c_breath').bind.width, { t: 0.4, vars: G.doc.vars }),
+  };
+})()`);
+check('绑定随 patch 到达运行时', b0.hasBind === true, b0.hasBind);
+check('变量初值来自定义', b0.v === 0, b0.v);
+check('变量参与表达式求值', Math.abs(b0.w - 1.5) < 1e-6, b0.w);
+check('时间绑定：同一表达式在不同 t 给出不同值',
+  Math.abs(b0.breath0 - b0.breath1) > 0.3, { t0: +b0.breath0.toFixed(3), t04: +b0.breath1.toFixed(3) });
+check('存在时间绑定 → 标记为逐帧重绘', b0.timeBinding === true, b0.timeBinding);
+
+/** 数"近白"像素：c_beat 是唯一近白的线（另两条是绿/粉），所以它的粗细直接反映在数量上。
+ *  不按坐标取样 —— 画布是等比缩放显示的，页面坐标到缓冲像素的映射不值得再赌一次。 */
+const inkCount = () => cdp.eval(`(() => {
+  const cv = window.GHCE.renderer.canvas;
+  const g = cv.getContext('2d');
+  const d = g.getImageData(0, 0, cv.width, cv.height).data;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] > 20 && d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200) n++;
+  }
+  return n;
+})()`);
+
+const ink0 = await inkCount();
+const rev0 = b0.rev;
+
+await cdp.eval(`(() => {
+  const cv = window.GHCE.renderer.canvas;
+  cv.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 }));
+})()`);
+await sleep(260);
+
+const b1 = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const cmd = G.doc.cmds.get('c_beat');
+  return {
+    v: G.doc.vars.get('v_w'),
+    w: G.evalExpr(cmd.bind.width, { t: G.doc.time || 0, vars: G.doc.vars }),
+    rev: G.doc.rev,
+    stored: cmd.bind.width ? 'expr' : 'none',
+  };
+})()`);
+const ink1 = await inkCount();
+
+check('点击写入变量', b1.v === 1, b1.v);
+check('表达式随之重算出新宽度', Math.abs(b1.w - 7.5) < 1e-6, b1.w);
+check('全程没有触发 GH 求解（rev 不变）', b1.rev === rev0, { before: rev0, after: b1.rev });
+check('像素证据：线真的变粗了', ink1 > ink0 * 1.4, { before: ink0, after: ink1 });
+check('绑定不污染指令本体（cmd.style.width 仍是静态值）',
+  await cdp.eval("window.GHCE.doc.cmds.get('c_beat').style.stroke.width") === 1.5,
+  await cdp.eval("window.GHCE.doc.cmds.get('c_beat').style.stroke.width"));
+
+/* 10.6 色相 / 缩放 / 指针事件（v0.30.1） */
+const hueFx = await cdp.eval(`(() => {
+  const a = window.GHCE.recolor('#EDEBE4', 0.5);
+  const b = window.GHCE.recolor('#EDEBE4', 0.0);
+  return { a, b, differs: a !== b, hue180: a.indexOf('180') >= 0 };
+})()`);
+check('色相函数：只换色相、保留明度', hueFx.differs && hueFx.hue180, hueFx);
+
+const ringB = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const c = G.doc.cmds.get('c_ring');
+  const at = (t, k) => +G.evalExpr(c.bind[k], { t, vars: G.doc.vars }).toFixed(3);
+  return { s0: at(0, 'scale'), s1: at(1, 'scale'), h0: at(0, 'hue'), h1: at(1, 'hue') };
+})()`);
+check('缩放绑定随时间呼吸', Math.abs(ringB.s0 - ringB.s1) > 0.1, ringB);
+check('色相绑定随时间循环', Math.abs(ringB.h0 - ringB.h1) > 0.1, ringB);
+
+/** 数绿方块（#10B363）的像素：按下放大最直接的证据 */
+const greenCount = () => cdp.eval(`(() => {
+  const cv = window.GHCE.renderer.canvas;
+  const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] > 20 && d[i + 1] > 120 && d[i + 1] > d[i] * 1.6 && d[i + 1] > d[i + 2] * 1.3) n++;
+  }
+  return n;
+})()`);
+
+const revHold = await cdp.eval('window.GHCE.doc.rev');
+const g0 = await greenCount();
+await cdp.eval(`window.GHCE.renderer.canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+await sleep(240);
+const holdDown = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const c = G.doc.cmds.get('c_hold');
+  return { v: G.doc.vars.get('v_hold'), scale: G.evalExpr(c.bind.scale, { t: 0, vars: G.doc.vars }), rev: G.doc.rev };
+})()`);
+const g1 = await greenCount();
+check('pointerdown 写变量', holdDown.v === 1, holdDown.v);
+check('pointerdown 后缩放表达式为 4', Math.abs(holdDown.scale - 4) < 1e-6, holdDown.scale);
+check('指针事件不触发 GH 求解（rev 不变）', holdDown.rev === revHold, { before: revHold, after: holdDown.rev });
+check('像素证据：方块被放大', g1 > g0 * 1.6, { before: g0, after: g1 });
+
+await cdp.eval(`window.GHCE.renderer.canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))`);
+await sleep(240);
+const holdUp = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const c = G.doc.cmds.get('c_hold');
+  return { v: G.doc.vars.get('v_hold'), scale: G.evalExpr(c.bind.scale, { t: 0, vars: G.doc.vars }) };
+})()`);
+check('pointerup 复位变量', holdUp.v === 0 && Math.abs(holdUp.scale - 1) < 1e-6, holdUp);
+
+const f85 = await shot('binding');
+console.log('  screenshot:', f85);
+
+/* 10.7 Mark：同一曲线的五种静态画法（v0.31）
+ *
+ * 这一节要证明三件事：
+ *   1. 500+ 条标记只引用 3 份印章几何 —— patch 体积靠这个守住；
+ *   2. 位置与朝向全在 matrix 里，没有把印章坐标烘进几何；
+ *   3. 五种画法真的画出五种墨量，而不是"参数不同、画面一样"。 */
+await cdp.eval("window.GHCE.selectScene('marks')");
+await sleep(900);
+
+const mk = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const cmds = [...G.doc.cmds.values()];
+  const isMark = (c) => /^c_(stipple|nib|hatch|scatter)_/.test(c.id);
+  const marks = cmds.filter(isMark);
+  const stipple = marks.filter((c) => c.id.startsWith('c_stipple_')).sort((a, b) => a.order - b.order);
+  const scaleOf = (c) => Math.hypot(c.transform.matrix[0], c.transform.matrix[1]);
+  const xs = stipple.map((c) => c.transform.matrix[4]);
+  const ys = stipple.map((c) => c.transform.matrix[5]);
+  return {
+    cmds: cmds.length,
+    marks: marks.length,
+    geoms: G.doc.stats().geoms,
+    brushes: [...G.doc.geoms.keys()].filter((k) => k.indexOf('g_brush') === 0).length,
+    stippleN: stipple.length,
+    firstScale: stipple.length ? +scaleOf(stipple[0]).toFixed(3) : 0,
+    lastScale: stipple.length ? +scaleOf(stipple[stipple.length - 1]).toFixed(3) : 0,
+    firstX: stipple.length ? +xs[0].toFixed(1) : 0,
+    lastX: stipple.length ? +xs[xs.length - 1].toFixed(1) : 0,
+    ySpread: stipple.length ? +(Math.max(...ys) - Math.min(...ys)).toFixed(1) : 0,
+    bytes: G.client.metrics.lastBytes,
+  };
+})()`);
+
+check('300+ 条标记只引用 3 份印章几何',
+  mk.brushes === 3 && mk.marks > 300, { brushes: mk.brushes, marks: mk.marks, cmds: mk.cmds, geoms: mk.geoms });
+check('标记矩阵沿路径分布（水平 900+，纵向随波形 60+）',
+  mk.lastX - mk.firstX > 900 && mk.ySpread > 60, { firstX: mk.firstX, lastX: mk.lastX, ySpread: mk.ySpread });
+check('Style Map：点描沿路径由小到大',
+  mk.lastScale > mk.firstScale * 3, { first: mk.firstScale, last: mk.lastScale });
+check('整帧体积守住 400KB', mk.bytes > 0 && mk.bytes < 400000, mk.bytes);
+
+/** 五条带各数一次墨量：不是"有没有画"，是"五种画法真的不一样" */
+const bands = await cdp.eval(`(() => {
+  const G = window.GHCE, cv = G.renderer.canvas, g = cv.getContext('2d');
+  const k = cv.width / G.doc.canvas.w;
+  const out = [];
+  for (const cy of [130, 300, 470, 640, 810]) {
+    const y0 = Math.max(0, Math.round((cy - 85) * k));
+    const h = Math.min(cv.height - y0, Math.round(170 * k));
+    const d = g.getImageData(0, y0, cv.width, h).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 12) {
+      const lum = (d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000;
+      if (d[i + 3] > 20 && lum > 55) n++;
+    }
+    out.push(n);
+  }
+  return out;
+})()`);
+check('五条带都有墨（五种画法都画出来了）', bands.every((n) => n > 150), bands);
+check('五种画法的墨量至少三档（不是同一张图换个参数）',
+  new Set(bands.map((n) => Math.round(n / 150))).size >= 3, bands);
+
+// 回归：从 fade 场景切到普通场景，clearMode 不能残留。
+// 这条是 v0.31 做五种画法时抓到的真 bug —— doc.reset 早先用 Object.assign，
+// 没带的字段会留着上一件作品的设置，而 GH 的 Canvas 电池根本不发 clearMode。
+await cdp.eval("window.GHCE.selectScene('living')");
+await sleep(500);
+await cdp.eval("window.GHCE.selectScene('marks')");
+await sleep(600);
+const clearMode = await cdp.eval("window.GHCE.doc.canvas.clearMode");
+check('换作品时画布设置回到默认（fade 不会残留）', clearMode === 'clear', clearMode);
+
+const f86 = await shot('marks');
+console.log('  screenshot:', f86);
+
+/* 10.8 Behavior Graph：状态读写 + 条件 + 生成/销毁（v0.32）
+ *
+ * 这一节要证明的不是"粒子动了"，而是：
+ *   1. 程序到达运行时，且**没有**任何行为预设参与；
+ *   2. 固定步长下人口按代数增长、到代数上限停住；
+ *   3. 销毁按条件发生，残影（留痕）被保留且有上限；
+ *   4. 同样的步数重跑，位置逐点相同（确定性）；
+ *   5. 全程没有触发 GH 求解（rev 不变）。 */
+await cdp.eval("window.GHCE.selectScene('behavior')");
+await sleep(800);
+
+const sim = await cdp.eval(`(() => {
+  const G = window.GHCE, E = G.entities;
+  const id = 'e_swarm';
+  const snap = () => {
+    const s = E.snapshot(id);
+    return { n: s.count, pts: s.pts, gens: s.gens, ghosts: s.ghosts };
+  };
+  const bp = E.blueprints.get(id);
+  const prog = bp && bp.def.program;
+  const meta = {
+    hasProgram: !!prog,
+    steps: prog ? prog.steps.length : 0,
+    spawn: !!(prog && prog.spawn),
+    destroy: !!(prog && prog.destroy),
+    ownsXY: !!(prog && prog.ownsXY),
+    ownsU: !!(prog && prog.ownsU),
+  };
+
+  const rev0 = G.doc.rev;
+  E.restart();
+  E.step(G.doc, 90);
+  const a = snap();
+  E.step(G.doc, 90);
+  const b = snap();
+  E.step(G.doc, 90);
+  const c = snap();
+  E.step(G.doc, 90);
+  const d = snap();
+  E.step(G.doc, 60);
+  const e = snap();
+
+  E.restart();
+  E.step(G.doc, 90);
+  const again = snap();
+
+  return { meta, a, b, c, d, e, again, rev0, rev1: G.doc.rev };
+})()`);
+
+check('状态程序到达运行时（5 条写入 + 生成 + 销毁）',
+  sim.meta.hasProgram && sim.meta.steps === 5 && sim.meta.spawn && sim.meta.destroy, sim.meta);
+check('写了 x/y 就接管运动（不再沿曲线跑，也不自增 u）',
+  sim.meta.ownsXY === true && sim.meta.ownsU === false, sim.meta);
+
+check('1.5s：24 个初代各分裂一次 → 72',
+  sim.a.n === 72, { n: sim.a.n });
+check('3.0s：子代再分裂一代 → 168（代数上限 2 挡住第三代）',
+  sim.b.n === 168, { n: sim.b.n });
+check('4.5s：还没到销毁年龄 → 168',
+  sim.c.n === 168, { n: sim.c.n });
+check('6.0s：子代到龄销毁 → 120，残影 48',
+  sim.d.n === 120 && sim.d.ghosts === 48, { n: sim.d.n, ghosts: sim.d.ghosts });
+check('7.0s：孙代也销毁 → 只剩 24 个初代，残影累计 144',
+  sim.e.n === 24 && sim.e.ghosts === 144, { n: sim.e.n, ghosts: sim.e.ghosts });
+check('代数不超过上限（没有无限分裂）',
+  Math.max(...sim.e.gens) <= 2, sim.e.gens);
+
+check('固定步长可复现：重跑同样的步数，位置逐点相同',
+  JSON.stringify(sim.a.pts) === JSON.stringify(sim.again.pts),
+  { first: sim.a.pts[0], again: sim.again.pts[0] });
+
+check('整个模拟过程没有触发 GH 求解（rev 不变）',
+  sim.rev0 === sim.rev1, { before: sim.rev0, after: sim.rev1 });
+
+// 截图前跑 4 秒（轨道已经建立）并显式画一帧：
+// 前面的模拟是同步跑的、不经过 RAF，不主动画就可能截到上一帧。
+await cdp.eval(`(() => {
+  const G = window.GHCE, E = G.entities;
+  E.restart();
+  E.step(G.doc, 240);
+  G.renderer.draw();
+  return true;
+})()`);
+await sleep(150);
+const f87 = await shot('behavior');
+console.log('  screenshot:', f87);
+
 /* 11. 四档视口：量横向溢出与是否被裁 */
 const VIEWPORTS = [
   [390, 844], [700, 700], [800, 600], [1400, 900],
@@ -597,23 +1010,23 @@ for (const [w, h] of VIEWPORTS) {
   await sleep(320);
   const L = await cdp.eval(`(() => {
     const c = document.querySelector('.art').getBoundingClientRect();
-    const hud = document.getElementById('hud').getBoundingClientRect();
+    const dev = document.getElementById('dev');
     return {
       inner: [innerWidth, innerHeight],
       scroll: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
       art: [Math.round(c.x), Math.round(c.y), Math.round(c.width), Math.round(c.height)],
-      hudRight: Math.round(hud.right),
-      overlap: innerWidth >= 900 ? Math.max(0, hud.right - c.x) : 0
+      devVisible: !dev.hidden,
+      stagePad: parseFloat(getComputedStyle(document.getElementById('stage')).paddingLeft) || 0
     };
   })()`);
   const overflowX = L.scroll[0] - L.inner[0];
   const clipped = L.art[0] < -1 || L.art[1] < -1
     || L.art[0] + L.art[2] > L.inner[0] + 1 || L.art[1] + L.art[3] > L.inner[1] + 1;
-  if (overflowX > 0 || clipped || L.overlap > 0) {
-    layoutIssues.push({ vp: `${w}x${h}`, overflowX, clipped, overlap: L.overlap, art: L.art });
+  if (overflowX > 0 || clipped || L.devVisible || L.stagePad > 0) {
+    layoutIssues.push({ vp: `${w}x${h}`, overflowX, clipped, devVisible: L.devVisible, stagePad: L.stagePad, art: L.art });
   }
 }
-check('四档视口无横向溢出 / 无裁切 / HUD 不压画布', layoutIssues.length === 0, layoutIssues);
+check('四档视口无横向溢出 / 无裁切 / 无面板遮挡', layoutIssues.length === 0, layoutIssues);
 
 await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
 await sleep(300);

@@ -10,11 +10,14 @@ namespace GHCE.Ui
     ///
     /// 不用 GH_Document.NewSolution —— 那会把整张图重解一遍。
     /// 这里只 ExpireSolution 自己，所以下游该重算的自然重算，别的电池不动。
-    /// 频率 250ms：交互数据本来就不需要 60Hz，真需要高频就该在浏览器里做。
+    /// 频率 100ms：
+    ///   - 与 stat 回传同频（运行时每 100ms 发一次），再快也只是空转
+    ///   - 必须小于 tween 的 CONTINUOUS_GAP（120ms），否则每次刷新都会被当成
+    ///     "一次离散变更"而起一段 0.9 秒过渡，画面会黏在路上
     /// </summary>
     internal static class StatTicker
     {
-        const int IntervalMs = 250;
+        const int IntervalMs = 100;
 
         static readonly List<WeakReference<GH_Component>> Subs = new List<WeakReference<GH_Component>>();
         static System.Windows.Forms.Timer _timer;

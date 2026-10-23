@@ -31,6 +31,10 @@ class Probe
         ?? System.IO.Path.GetFullPath(System.IO.Path.Combine(
             AppContext.BaseDirectory, "..", "..", "..", "..", "GHCE", "bin", "Release", "net7.0-windows"));
 
+    /// <summary>构建输出里叫 GHCE.dll，装到 Libraries 里的叫 GHCE.gha；两种都得能读。</summary>
+    static string ArtifactPath() =>
+        System.IO.File.Exists(BIN + @"\GHCE.dll") ? BIN + @"\GHCE.dll" : BIN + @"\GHCE.gha";
+
     static Assembly Resolve(object sender, ResolveEventArgs args)
     {
         var name = new AssemblyName(args.Name).Name;
@@ -39,17 +43,19 @@ class Probe
             "RhinoCommon" => RH + @"\System\netcore\RhinoCommon.dll",
             "Grasshopper" => RH + @"\Plug-ins\Grasshopper\Grasshopper.dll",
             "GH_IO" => RH + @"\Plug-ins\Grasshopper\GH_IO.dll",
-            "GHCE" => BIN + @"\GHCE.dll",
+            "GHCE" => ArtifactPath(),
             _ => null
         };
         return path != null ? Assembly.LoadFrom(path) : null;
     }
 
     static bool _serve;
+    static bool _signal;
 
     static int Main(string[] args)
     {
         _serve = args != null && args.Contains("--serve");
+        _signal = args != null && args.Contains("--signal");
         _clock = args != null && args.Contains("--clock");
         AppDomain.CurrentDomain.AssemblyResolve += Resolve;
         return Run();
@@ -129,11 +135,12 @@ class Probe
 
         int fail = 0;
         var icons = new System.Collections.Generic.List<(string name, System.Drawing.Bitmap icon)>();
+        Console.WriteLine("  icon palette: dark chip + light stroke (fixed, panel-independent)");
 
         try
         {
             // 构建输出里叫 GHCE.dll，装到 Libraries 里的叫 GHCE.gha，两种都要能读
-            var dllPath = System.IO.File.Exists(BIN + @"\GHCE.dll") ? BIN + @"\GHCE.dll" : BIN + @"\GHCE.gha";
+            var dllPath = ArtifactPath();
             Console.WriteLine($"artifact: {dllPath}");
             var asm = Assembly.LoadFrom(dllPath);
             Console.WriteLine($"loaded: {asm.GetName().Name} {asm.GetName().Version}");
@@ -199,7 +206,7 @@ class Probe
                     var iconProp = t.GetProperty("Icon_24x24", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
                     var icon = iconProp?.GetValue(p) as System.Drawing.Bitmap;
                     icons.Add(("data: " + p.Name, icon));
-                    Console.WriteLine($"  OK  param {p.Name,-12} {p.TypeName,-14} icon={(icon == null ? "NULL" : icon.Width + "x" + icon.Height)}");
+                    Console.WriteLine($"  OK  param {p.Name,-12} [{p.Category}/{p.SubCategory}] {(icon == null ? "NULL" : icon.Width + "x" + icon.Height)}");
                 }
                 catch (Exception ex)
                 {
@@ -214,6 +221,58 @@ class Probe
                 Console.WriteLine("  有图标为 null：" + string.Join(",", icons.Where(i => i.icon == null).Select(i => i.name)));
             }
 
+            // 图标自反差的硬断言。
+            //
+            // 来由：v0.28 只统计"某个数据图标"的明暗像素占比就宣布通过，
+            // 但另一只数据图标当时是"不透明黑底 + 深色字形"，统计口径根本照不到它，
+            // 用户在 GH 里看到的是整组黑块。所以这里逐只图标量：底色取不透明像素的众数，
+            // 再看有多少像素明显偏离底色 —— 偏离面积太小就是"字被埋了"。
+            {
+                double minCover = 1.0;
+                int minDelta = 255;
+                string worstCoverName = "-", worstDeltaName = "-";
+                Console.WriteLine("  --- icon contrast（底色 / 字形覆盖率 / 最大亮差）---");
+                foreach (var (name, bmp) in icons)
+                {
+                    if (bmp == null) continue;
+                    var hist = new int[256];
+                    int opaque = 0;
+                    for (int y = 0; y < 24; y++)
+                        for (int x = 0; x < 24; x++)
+                        {
+                            var c = bmp.GetPixel(x, y);
+                            if (c.A < 250) continue;
+                            hist[(c.R * 299 + c.G * 587 + c.B * 114) / 1000]++;
+                            opaque++;
+                        }
+                    if (opaque < 100) { fail++; Console.WriteLine($"  FAIL {name}: 不透明像素只有 {opaque}，图标没有自带底"); continue; }
+
+                    int bg = 0;
+                    for (int i = 1; i < 256; i++) if (hist[i] > hist[bg]) bg = i;
+
+                    int marked = 0, total = 0, maxDev = 0;
+                    for (int y = 0; y < 24; y++)
+                        for (int x = 0; x < 24; x++)
+                        {
+                            var c = bmp.GetPixel(x, y);
+                            if (c.A < 160) continue;
+                            total++;
+                            int dev = Math.Abs((c.R * 299 + c.G * 587 + c.B * 114) / 1000 - bg);
+                            if (dev > 60) marked++;
+                            if (dev > maxDev) maxDev = dev;
+                        }
+                    double cover = total == 0 ? 0 : (double)marked / total;
+                    Console.WriteLine($"  {name,-19} bg={bg,3} cover={cover * 100,5:F1}%  maxΔ={maxDev,3}");
+
+                    if (cover < minCover) { minCover = cover; worstCoverName = name; }
+                    if (maxDev < minDelta) { minDelta = maxDev; worstDeltaName = name; }
+                    if (cover < 0.04) { fail++; Console.WriteLine($"  FAIL {name}: 字形覆盖 {cover * 100:F1}% < 4%"); }
+                    if (maxDev < 80) { fail++; Console.WriteLine($"  FAIL {name}: 与底色反差 maxΔ={maxDev} < 80"); }
+                }
+                Console.WriteLine($"  最弱覆盖：{worstCoverName} {minCover * 100:F1}%（下限 4%）");
+                Console.WriteLine($"  最弱反差：{worstDeltaName} maxΔ={minDelta}（下限 80）");
+            }
+
             // 把图标放大 8 倍拼成一张对照图，省得为了看图标去开 GH
             try
             {
@@ -224,12 +283,18 @@ class Probe
                 using (var sheet = new System.Drawing.Bitmap(w, h))
                 using (var g = System.Drawing.Graphics.FromImage(sheet))
                 {
-                    g.Clear(System.Drawing.Color.FromArgb(0x0B, 0x0B, 0x0F));
+                    // 背景跟着主题走，否则对照图看不出"浅色主题下能不能看清"
+                    bool lightSheet = Environment.GetEnvironmentVariable("GHCE_ICON_THEME") == "light";
+                    g.Clear(lightSheet
+                        ? System.Drawing.Color.FromArgb(0xF3, 0xF3, 0xF6)
+                        : System.Drawing.Color.FromArgb(0x0B, 0x0B, 0x0F));
                     g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
                     g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
                     g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
                     using (var font = new System.Drawing.Font("Consolas", 13f))
-                    using (var brush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(0xE8, 0xE6, 0xDF)))
+                    using (var brush = new System.Drawing.SolidBrush(lightSheet
+                        ? System.Drawing.Color.FromArgb(0x2C, 0x2C, 0x36)
+                        : System.Drawing.Color.FromArgb(0xE8, 0xE6, 0xDF)))
                     {
                         for (int i = 0; i < icons.Count; i++)
                         {
@@ -360,6 +425,9 @@ class Probe
                 if (!offOk) fail++;
             }
 
+            // ---------- v0.31 Mark 数学层（纯数值）----------
+            fail += TestMarks();
+
             // PatchBuilder 首帧 / 次帧
             var pbType = asm.GetType("GHCE.Bridge.PatchBuilder");
             var pb = Activator.CreateInstance(pbType);
@@ -386,7 +454,7 @@ class Probe
             asm.GetType("GHCE.Types.FillDef").GetField("Color").SetValue(fill, "#112233");
             cmdType.GetField("Fill").SetValue(cmdDef, fill);
 
-            // 给指令挂一条时间轨（v0.16）：帧序列由 GH 算一次，浏览器按 Duration/Loop/Ease 播
+            // 给指令挂一条时间轨（v0.18）：帧序列由 GH 算一次，浏览器按全局时间轴播
             var trackType = asm.GetType("GHCE.Types.TrackDef");
             var track = Activator.CreateInstance(trackType);
             // 两帧 identity 与绕 (100,100) 转 90° 的页面矩阵
@@ -397,11 +465,19 @@ class Probe
                 0, 1, -1, 0, 200, 0,
             });
             trackType.GetField("Reveal").SetValue(track, new double[] { 0, 1 });
-            trackType.GetField("Duration").SetValue(track, 2.5);
-            trackType.GetField("Loop").SetValue(track, true);
+            // 轨道只报自己的区间；时长与循环归 Timeline
+            trackType.GetField("Start").SetValue(track, 1.0);
+            trackType.GetField("End").SetValue(track, 3.5);
+            trackType.GetField("Hidden").SetValue(track, false);
             trackType.GetField("EaseX").SetValue(track, new double[] { 0, 0.5, 1 });
             trackType.GetField("EaseY").SetValue(track, new double[] { 0, 0.75, 1 });
             cmdType.GetField("Track").SetValue(cmdDef, track);
+
+            var tlType = asm.GetType("GHCE.Types.TimelineDef");
+            var tlDef = Activator.CreateInstance(tlType);
+            tlType.GetField("Duration").SetValue(tlDef, 6.0);
+            tlType.GetField("Loop").SetValue(tlDef, true);
+            cmdType.GetField("Timeline").SetValue(cmdDef, tlDef);
 
             // 2D 仿射矩阵（来自 GH 的 Transform 对象）。这里用已知值，验协议与运行时消费
             cmdType.GetField("Matrix").SetValue(cmdDef, new double[] { 0, -1, 1, 0, 10, -20 });
@@ -459,7 +535,32 @@ class Probe
             evtList.Add(evtDef);
             cmdType.GetField("Events").SetValue(cmdDef, evtList);
 
-            var args = new object[] { canvasDef, cmdList, entList, null };
+            // v0.30：表达式绑定 + 事件写变量
+            // 目的不是"能跑"，而是确认这三样真的进了 patch：
+            //   cmd.bind（属性 → 表达式树）、event.writes（事件 → 变量）、var.upsert（变量声明）
+            var exprType = asm.GetType("GHCE.Types.RuntimeExprDef");
+            var varNode = exprType.GetMethod("Var").Invoke(null, new object[] { "v_w", 0.0 });
+            var constSix = exprType.GetMethod("Const").Invoke(null, new object[] { 6.0 });
+            var widthExpr = exprType.GetMethod("Bin").Invoke(null, new object[] { "mul", varNode, constSix });
+
+            var bindDictType = typeof(System.Collections.Generic.Dictionary<,>)
+                .MakeGenericType(typeof(string), exprType);
+            var bindDict = (System.Collections.IDictionary)Activator.CreateInstance(bindDictType);
+            bindDict["width"] = widthExpr;
+            cmdType.GetField("Binds").SetValue(cmdDef, bindDict);
+
+            var writeType = asm.GetType("GHCE.Types.WriteDef");
+            var write = Activator.CreateInstance(writeType);
+            writeType.GetField("Var").SetValue(write, "v_w");
+            writeType.GetField("Op").SetValue(write, "toggle");
+            writeType.GetField("Value").SetValue(write, 1.0);
+            var writeListType = typeof(System.Collections.Generic.List<>).MakeGenericType(writeType);
+            var writeList = (System.Collections.IList)Activator.CreateInstance(writeListType);
+            writeList.Add(write);
+            evtType.GetField("Writes").SetValue(evtDef, writeList);
+            evtType.GetField("Action").SetValue(evtDef, null);
+
+            var args = new object[] { canvasDef, cmdList, entList, null, null };
             var json = (string)build.Invoke(pb, args);
             Console.WriteLine($"  patch1: {args[3]}  len={(json?.Length ?? -1)}");
             if (json != null && json.IndexOf("entity.upsert", StringComparison.Ordinal) < 0)
@@ -467,20 +568,40 @@ class Probe
                 fail++;
                 Console.WriteLine("  FAIL: patch 里没有 entity.upsert");
             }
-            // v0.16：时间轨不是一个独立的 op 流，它挂在 cmd 的值里（跟着指令一起增删）
+            if (json != null)
+            {
+                bool hasBind = json.IndexOf("\"bind\"", StringComparison.Ordinal) >= 0;
+                bool hasWrites = json.IndexOf("\"writes\"", StringComparison.Ordinal) >= 0;
+                bool hasVar = json.IndexOf("var.upsert", StringComparison.Ordinal) >= 0;
+                Console.WriteLine($"  v0.30 绑定: bind={hasBind} writes={hasWrites} var={hasVar}");
+                if (!hasBind || !hasWrites || !hasVar) fail++;
+            }
+            // v0.18：轨道挂在 cmd 的值里（跟着指令增删），只报自己的区间；
+            // 时长与循环是文档级的 timeline.set，独立一条 op
             if (json != null)
             {
                 bool trkOk = json.IndexOf("\"track\":{\"n\":2", StringComparison.Ordinal) >= 0
-                             && json.IndexOf("\"duration\":2.5", StringComparison.Ordinal) >= 0
-                             && json.IndexOf("\"loop\":true", StringComparison.Ordinal) >= 0
+                             && json.IndexOf("\"start\":1", StringComparison.Ordinal) >= 0
+                             && json.IndexOf("\"end\":3.5", StringComparison.Ordinal) >= 0
+                             && json.IndexOf("\"hidden\":false", StringComparison.Ordinal) >= 0
                              && json.IndexOf("\"reveal\":[0,1]", StringComparison.Ordinal) >= 0
                              && json.IndexOf("\"easeX\":[0,0.5,1]", StringComparison.Ordinal) >= 0
-                             && json.IndexOf("\"frames\":\"", StringComparison.Ordinal) >= 0;
+                             && json.IndexOf("\"frames\":\"", StringComparison.Ordinal) >= 0
+                             && json.IndexOf("\"duration\":2.5", StringComparison.Ordinal) < 0;
                 Console.WriteLine($"  track in patch: {trkOk}");
                 if (!trkOk)
                 {
                     fail++;
-                    Console.WriteLine("  FAIL: 时间轨没进协议（n/duration/loop/reveal/ease/frames）");
+                    Console.WriteLine("  FAIL: 轨道没进协议（start/end/hidden/reveal/ease/frames），或旧 duration 仍在");
+                }
+
+                bool tlOk = json.IndexOf("\"op\":\"timeline.set\"", StringComparison.Ordinal) >= 0
+                            && json.IndexOf("\"duration\":6", StringComparison.Ordinal) >= 0;
+                Console.WriteLine($"  timeline.set in patch: {tlOk}");
+                if (!tlOk)
+                {
+                    fail++;
+                    Console.WriteLine("  FAIL: 全局时间轴没进协议（timeline.set）");
                 }
             }
             if (json != null)
@@ -513,10 +634,16 @@ class Probe
                     System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-csharp-patch.json"), json);
                 Console.WriteLine("  wrote: ghce-csharp-patch.json");
             }
-            var args2 = new object[] { canvasDef, cmdList, entList, null };
+            var args2 = new object[] { canvasDef, cmdList, entList, null, null };
             var json2 = (string)build.Invoke(pb, args2);
             Console.WriteLine($"  patch2 (expect null): {(json2 == null ? "null" : "NOT NULL")}  {args2[3]}");
             if (json2 != null) fail++;
+
+            // ---------- v0.31 Mark → patch（体积与去重）----------
+            fail += TestMarkPatch();
+
+            // ---------- v0.32 状态程序 → patch ----------
+            fail += TestEntityProgram();
         }
         catch (Exception ex)
         {
@@ -524,9 +651,127 @@ class Probe
             Console.WriteLine("FATAL: " + Unwrap(ex));
         }
 
+        // ---- RuntimeStat 解析：喂运行时真实形状的 stat，读回信号值 ----
+        // 这一段不依赖网络，能单独证明"回传解析"这一环是否成立。
+        const string statJson =
+            "{\"v\":\"0.1\",\"t\":\"stat\",\"ptr\":[10,20],\"inside\":true,\"down\":false,\"clicks\":3," +
+            "\"entities\":0,\"alive\":0,\"rev\":5,\"fps\":60,\"drawMs\":1.25,\"stepMs\":0.4,\"time\":2.5," +
+            "\"keys\":\"w\",\"signals\":{\"a1b2c3d4\":0.4375}}";
+        GHCE.Bridge.RuntimeStat.Update(statJson);
+        bool hasSig = GHCE.Bridge.RuntimeStat.HasSignal("a1b2c3d4");
+        double sigVal = GHCE.Bridge.RuntimeStat.SignalValue("a1b2c3d4");
+        Console.WriteLine($"  stat parse: has={hasSig} value={sigVal:0.####} clicks={GHCE.Bridge.RuntimeStat.Clicks} rev={GHCE.Bridge.RuntimeStat.Rev}");
+        if (!hasSig || Math.Abs(sigVal - 0.4375) > 1e-9)
+        {
+            fail++;
+            Console.WriteLine("  FAIL: stat 里的 signals 没被解析出来");
+        }
+
+        // ---- 三维：矩阵约定转换（纯 double，不需要 Rhino 原生库）----
+        // Rhino 是行向量约定（p' = p*M），Three.js 是列向量约定（p' = M*p），差一个转置。
+        // 这里用"绕 Z 转 90° 再平移"当已知答案，两边必须把同一个点送到同一个位置。
+        {
+            var rowMajor = GHCE.Types.Transform3DMath.RotationZ90ThenTranslate(10, 20, 5);
+            var col = GHCE.Types.Transform3DMath.ToThreeOrder(rowMajor);
+            var viaRow = GHCE.Types.Transform3DMath.ApplyRowVector(rowMajor, 1, 0, 0);
+            var viaCol = GHCE.Types.Transform3DMath.ApplyColumnVector(col, 1, 0, 0);
+            bool same = Math.Abs(viaRow[0] - viaCol[0]) < 1e-12
+                        && Math.Abs(viaRow[1] - viaCol[1]) < 1e-12
+                        && Math.Abs(viaRow[2] - viaCol[2]) < 1e-12;
+            // (1,0,0) 绕 Z 转 90° → (0,1,0)，再平移 (10,20,5) → (10,21,5)
+            bool expected = Math.Abs(viaRow[0] - 10) < 1e-12
+                            && Math.Abs(viaRow[1] - 21) < 1e-12
+                            && Math.Abs(viaRow[2] - 5) < 1e-12;
+            Console.WriteLine($"  matrix3d: row=({viaRow[0]:0.##},{viaRow[1]:0.##},{viaRow[2]:0.##}) col=({viaCol[0]:0.##},{viaCol[1]:0.##},{viaCol[2]:0.##}) transpose-ok={same} expected-ok={expected}");
+            if (!same || !expected)
+            {
+                fail++;
+                Console.WriteLine("  FAIL: 三维矩阵的转置换算不对");
+            }
+        }
+
+        // ---- 三维：patch 序列化 ----
+        {
+            var mesh = new GHCE.Types.MeshDef
+            {
+                Id = "m_probe",
+                Positions = new double[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 },
+                Indices = new int[] { 0, 1, 2 },
+                Xform = new GHCE.Types.Transform3DDef
+                {
+                    Matrix = GHCE.Types.Transform3DMath.ToThreeOrder(
+                        GHCE.Types.Transform3DMath.RotationZ90ThenTranslate(1, 2, 3)),
+                },
+            };
+            var cmd3d = new GHCE.Types.Cmd3DDef
+            {
+                Id = "c3_probe",
+                MeshId = mesh.Id,
+                Mesh = mesh,
+                Material = new GHCE.Types.Material3DDef { Mode = 3, Color = "#07a954", Size = 4, Glow = 0.5 },
+                // 静态矩阵：这一段是给回放测试用的（矩阵平移必须落在 (1,2,3)）
+                Xform = mesh.Xform,
+            };
+            var scene = new GHCE.Types.Scene3DDef { Background = "#101010", Lights = true };
+            scene.Cmds.Add(cmd3d);
+
+            var pb3 = new GHCE.Bridge.PatchBuilder();
+            var canvas3 = new GHCE.Types.CanvasDef { W = 800, H = 600 };
+            var j3 = pb3.Build(canvas3, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), null, scene, out var sum3);
+
+            bool hasMesh = j3 != null && j3.Contains("\"op\":\"mesh.upsert\"");
+            bool hasCmd = j3 != null && j3.Contains("\"op\":\"cmd3d.upsert\"");
+            bool hasScene = j3 != null && j3.Contains("\"op\":\"scene3d.set\"");
+            bool hasMatrix = j3 != null && j3.Contains("\"matrix\":\"");
+            bool hasMode = j3 != null && j3.Contains("\"mode\":3");
+            bool hasKind = j3 != null && j3.Contains("\"kind\":\"mesh\"");
+            // v0.30.1：帧序列自带的时长必须进协议 —— 否则三维只能按写死的 1.5s 循环。
+            // 单独算一份带帧序列的 patch：上面那份保持静态矩阵，回放测试还要用。
+            var savedX = cmd3d.Xform;
+            cmd3d.Xform = new GHCE.Types.Transform3DDef
+            {
+                N = 2,
+                Duration = 2.5,
+                Frames = new double[]
+                {
+                    1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1,
+                    1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  10, 0, 0, 1,
+                },
+            };
+            var jDur = new GHCE.Bridge.PatchBuilder()
+                .Build(canvas3, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), null, scene, out _);
+            cmd3d.Xform = savedX;
+
+            bool hasDuration = jDur != null && jDur.Contains("\"duration\":2.5");
+            Console.WriteLine($"  patch3d: mesh={hasMesh} cmd={hasCmd} scene={hasScene} matrix={hasMatrix} mode={hasMode} kind={hasKind} dur={hasDuration}  ({sum3})");
+            if (j3 != null)
+            {
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-csharp-patch3d.json"), j3);
+                Console.WriteLine("  wrote: ghce-csharp-patch3d.json");
+            }
+
+            if (!hasMesh || !hasCmd || !hasScene || !hasMatrix || !hasMode || !hasKind || !hasDuration)
+            {
+                fail++;
+                Console.WriteLine("  FAIL: 三维 patch 缺少字段");
+                Console.WriteLine("    " + (j3 == null ? "null" : j3.Substring(0, Math.Min(400, j3.Length))));
+            }
+
+            // 同样的输入再算一次必须为 null —— "无变化不发包"在三维上也要成立
+            var j3b = pb3.Build(canvas3, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), null, scene, out _);
+            Console.WriteLine($"  patch3d idle (expect null): {(j3b == null ? "null" : "NOT NULL")}");
+            if (j3b != null) fail++;
+        }
+
         Console.WriteLine(fail == 0 ? "RESULT: PASS" : $"RESULT: FAIL ({fail})");
 
         if (Environment.GetEnvironmentVariable("REFLECT") == "1") { ProbeIcons.Run(); return 0; }
+        if (_signal)
+        {
+            SignalMode();
+            return 0;
+        }
         if (_serve)
         {
             ServeMode();
@@ -539,6 +784,35 @@ class Probe
     {
         while (ex is TargetInvocationException tie && tie.InnerException != null) ex = tie.InnerException;
         return ex;
+    }
+
+    /// <summary>
+    /// --signal：只广播 signal 定义，用来抓包验证 C# 发送侧的载荷格式。
+    /// 运行时按这个格式解析，格式错一个字段整条链路就静默失效。
+    /// </summary>
+    static void SignalMode()
+    {
+        const int port = 8788;
+        var err = GHCE.Bridge.BridgeServer.StartAuto(port);
+        if (err != null) { Console.WriteLine("SIGNAL FAIL: " + err); return; }
+        Console.WriteLine($"actual port: {GHCE.Bridge.BridgeServer.Port}");
+
+        var def = new GHCE.Types.SignalDef
+        {
+            Id = "a1b2c3d4", Kind = "noise1", Seed = 7, Rate = 0.6, Args = new[] { 0.0 }
+        };
+
+        Console.WriteLine("READY");
+        Console.Out.Flush();
+
+        for (int i = 0; i < 200; i++)
+        {
+            GHCE.Bridge.BridgeServer.PublishSignal(def);
+            if (i % 5 == 0)
+                Console.WriteLine($"  pub {i} clients={GHCE.Bridge.BridgeServer.ClientCount}");
+            System.Threading.Thread.Sleep(200);
+        }
+        GHCE.Bridge.BridgeServer.Stop();
     }
 
     /// <summary>
@@ -600,7 +874,7 @@ class Probe
                 }
             }
 
-            var json = pb.Build(canvas, cmds, null, out var summary);
+            var json = pb.Build(canvas, cmds, null, null, out var summary);
             GHCE.Bridge.BridgeServer.Broadcast(json);
             if (tick % 10 == 0)
                 Console.WriteLine($"  tick {tick}: {summary}  clients={GHCE.Bridge.BridgeServer.ClientCount}");
@@ -609,4 +883,251 @@ class Probe
 
         GHCE.Bridge.BridgeServer.Stop();
     }
+
+    // ================= v0.31 Mark =================
+    // 三只 Mark 电池都只是端口包装，算法全在 MarkMath 里。所以这里绕开 GH 的
+    // IGH_DataAccess 直接断言数值 —— "标记放对了没有" 不该靠肉眼开 GH 看。
+
+    static int TestMarks()
+    {
+        int fail = 0;
+        void Check(string name, bool ok, string detail = "")
+        {
+            Console.WriteLine($"  {name,-26} ok={ok}  {detail}");
+            if (!ok) fail++;
+        }
+
+        // --- 印章形状：大小按"最大外接范围"定义，五个形状并排看一样大 ---
+        var dot = GHCE.Components.MarkMath.Stamp(1, 20, 1);
+        var dash = GHCE.Components.MarkMath.Stamp(2, 20, 2);
+        var square = GHCE.Components.MarkMath.Stamp(3, 20, 1);
+
+        Check("stamp dot", dot.Length == 48 && BBox(dot).maxX <= 10.0001 && BBox(dot).minX >= -10.0001,
+            $"{dot.Length / 2} pts, x [{BBox(dot).minX:0.##},{BBox(dot).maxX:0.##}]");
+        Check("stamp dash aspect", dash.Length == 4 && Math.Abs(dash[0] + 20) < 1e-9 && Math.Abs(dash[2] - 20) < 1e-9,
+            $"({dash[0]:0.##},{dash[1]:0.##}) → ({dash[2]:0.##},{dash[3]:0.##})");
+        Check("stamp square closed", square.Length == 10 && Math.Abs(square[0] - square[8]) < 1e-9,
+            $"{square.Length / 2} pts");
+
+        // --- 自定义印章归一化：100×100 的方块缩到 size=20，且居中 ---
+        var norm = GHCE.Components.MarkMath.Normalize(
+            new double[] { 0, 0, 100, 0, 100, 100, 0, 100, 0, 0 }, 20, 1, 0);
+        var nb = BBox(norm);
+        Check("normalize 100→20", Math.Abs(nb.minX + 10) < 1e-6 && Math.Abs(nb.maxY - 10) < 1e-6,
+            $"x [{nb.minX:0.##},{nb.maxX:0.##}] y [{nb.minY:0.##},{nb.maxY:0.##}]");
+
+        // --- 沿路径采样：600px 直线 / 10px 间距 = 61 个点（含两端） ---
+        var line = new GHCE.Types.PathDef { Id = "g_line", XY = new double[] { 0, 0, 600, 0 } };
+        var s1 = GHCE.Components.MarkMath.Sample(line, 10, GHCE.Components.MarkMath.MaxMarks);
+        Check("sample open path", s1.Count == 61
+            && Math.Abs(s1[0].U) < 1e-9 && Math.Abs(s1[60].U - 1) < 1e-9
+            && Math.Abs(s1[30].X - 300) < 1e-6 && Math.Abs(s1[30].Angle) < 1e-9,
+            $"{s1.Count} marks, mid x={s1[30].X:0.##} u={s1[30].U:0.##}");
+
+        // --- 闭合路径：100×100 方框周长 400 / 25 = 16 个，首点不重复 ---
+        var box = new GHCE.Types.PathDef
+        {
+            Id = "g_box", Closed = true,
+            XY = new double[] { 0, 0, 100, 0, 100, 100, 0, 100, 0, 0 },
+        };
+        var s2 = GHCE.Components.MarkMath.Sample(box, 25, GHCE.Components.MarkMath.MaxMarks);
+        bool wrapOk = s2.Count == 16
+            && Math.Abs(s2[0].X) < 1e-6 && Math.Abs(s2[0].Y) < 1e-6
+            && Math.Abs(s2[4].X - 100) < 1e-6    // 第 5 个点落在右上角
+            && Math.Abs(s2[15].X) < 1e-6 && Math.Abs(s2[15].Y - 25) < 1e-6;  // 末点绕回左边
+        Check("sample closed path", wrapOk, $"{s2.Count} marks, p4=({s2[4].X:0.##},{s2[4].Y:0.##}) p15=({s2[15].X:0.##},{s2[15].Y:0.##})");
+
+        // --- 放置矩阵：转 90° 后 (1,0) 必须落到 (100,51) ---
+        var m = GHCE.Components.MarkMath.Placement(100, 50, Math.PI / 2);
+        var p1 = Apply(m, 1, 0);
+        Check("placement rotate+move", Math.Abs(p1[0] - 100) < 1e-9 && Math.Abs(p1[1] - 51) < 1e-9,
+            $"({p1[0]:0.###},{p1[1]:0.###}) expect (100,51)");
+
+        // --- 旋转线性部分：位置不能动 ---
+        var m2 = GHCE.Components.MarkMath.Placement(100, 50, Math.PI / 2);
+        GHCE.Components.MarkMath.RotateLinear(m2, -Math.PI / 2);
+        var p2 = Apply(m2, 1, 0);
+        Check("rotate keeps position", Math.Abs(m2[4] - 100) < 1e-9 && Math.Abs(m2[5] - 50) < 1e-9
+            && Math.Abs(p2[0] - 101) < 1e-9 && Math.Abs(p2[1] - 50) < 1e-9,
+            $"({p2[0]:0.###},{p2[1]:0.###}) origin ({m2[4]:0.##},{m2[5]:0.##})");
+
+        // --- 缩放线性部分：位置同样不能动 ---
+        var m3 = GHCE.Components.MarkMath.Placement(30, 40, 0);
+        GHCE.Components.MarkMath.ScaleLinear(m3, 3);
+        Check("scale keeps position", Math.Abs(m3[4] - 30) < 1e-9 && Math.Abs(m3[5] - 40) < 1e-9
+            && Math.Abs(Apply(m3, 1, 0)[0] - 33) < 1e-9, $"x(1)→{Apply(m3, 1, 0)[0]:0.##}");
+
+        // --- 映射与伽马 ---
+        double mid = GHCE.Components.MarkMath.Map(0.5, 0, 1, 1, 5, 1);
+        double bias = GHCE.Components.MarkMath.Map(0.5, 0, 1, 1, 5, 2);
+        double clamp = GHCE.Components.MarkMath.Map(-3, 0, 1, 1, 5, 1);
+        Check("map + bias", Math.Abs(mid - 3) < 1e-9 && Math.Abs(bias - 2) < 1e-9 && Math.Abs(clamp - 1) < 1e-9,
+            $"mid={mid:0.##} bias2={bias:0.##} clamp={clamp:0.##}");
+
+        // --- 属性写入：尺寸改矩阵、不透明度乘算、线宽乘算 ---
+        var cmd = new GHCE.Types.CommandDef
+        {
+            Matrix = GHCE.Components.MarkMath.Placement(10, 20, 0),
+            Opacity = 1,
+            Stroke = new GHCE.Types.StrokeDef { Width = 2 },
+        };
+        GHCE.Components.MarkMath.Apply(cmd, 1, 2.5);
+        GHCE.Components.MarkMath.Apply(cmd, 3, 0.4);
+        GHCE.Components.MarkMath.Apply(cmd, 4, 3);
+        bool applyOk = Math.Abs(cmd.Matrix[0] - 2.5) < 1e-9 && Math.Abs(cmd.Matrix[4] - 10) < 1e-9
+                       && Math.Abs(cmd.Opacity - 0.4) < 1e-9 && Math.Abs(cmd.Stroke.Width - 6) < 1e-9;
+        Check("apply properties", applyOk,
+            $"scale={cmd.Matrix[0]:0.##} pos={cmd.Matrix[4]:0.##} opacity={cmd.Opacity:0.##} width={cmd.Stroke.Width:0.##}");
+
+        return fail;
+    }
+
+    /// <summary>Mark → patch：几何只发一次，指令一条一只，体积有上限。</summary>
+    static int TestMarkPatch()
+    {
+        int fail = 0;
+        var brush = new GHCE.Types.PathDef
+        {
+            Id = "g_brush_probe",
+            Closed = true,
+            XY = GHCE.Components.MarkMath.Stamp(1, 8, 1),
+        };
+        var src = new GHCE.Types.PathDef { Id = "g_probe_line", XY = new double[] { 100, 100, 700, 100 } };
+        var samples = GHCE.Components.MarkMath.Sample(src, 6, GHCE.Components.MarkMath.MaxMarks);
+
+        var cmds = new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(samples.Count);
+        for (int i = 0; i < samples.Count; i++)
+        {
+            var sm = samples[i];
+            cmds.Add(new GHCE.Types.GHCE_Command(new GHCE.Types.CommandDef
+            {
+                Id = GHCE.Bridge.PatchBuilder.StableId("c_mk_", $"probe|{src.Id}|{i}"),
+                GeomId = brush.Id,
+                Path = brush,
+                Layer = "main",
+                Order = i,
+                Matrix = GHCE.Components.MarkMath.Placement(sm.X, sm.Y, sm.Angle),
+                MarkU = sm.U,
+            }));
+        }
+
+        var canvas = new GHCE.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
+        var json = new GHCE.Bridge.PatchBuilder().Build(canvas, cmds, null, null, out var summary);
+
+        int geoms = Count(json, "geom.upsert");
+        int ups = Count(json, "cmd.upsert");
+        bool dedupe = geoms == 1;
+        bool oneEach = ups == samples.Count;
+        // 每只标记约 300–500 字节；500 只标记的整帧在 200KB 上下是可接受的，
+        // 超过 400KB 就说明有人在每个标记上又塞了一份几何。
+        bool sizeOk = json.Length < 400_000;
+
+        Console.WriteLine($"  mark patch: {samples.Count} marks · geom.upsert={geoms} · cmd.upsert={ups} · {json.Length} bytes  {summary}");
+        if (!dedupe) { fail++; Console.WriteLine("  FAIL: 印章几何没有去重（每个标记都发了一份）"); }
+        if (!oneEach) { fail++; Console.WriteLine("  FAIL: 标记数量与 cmd.upsert 数量不一致"); }
+        if (!sizeOk) { fail++; Console.WriteLine("  FAIL: 整帧体积超过 400KB"); }
+
+        // 矩阵真的进了协议：第一个标记的平移必须是路径起点
+        bool firstAtStart = json.Replace(" ", "").IndexOf("\"matrix\":[1,0,0,1,100,100]", StringComparison.Ordinal) >= 0;
+        Console.WriteLine($"  mark matrix at start: {firstAtStart}");
+        if (!firstAtStart) fail++;
+
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-mark-patch.json"), json);
+        return fail;
+    }
+
+    static int Count(string s, string needle)
+    {
+        if (string.IsNullOrEmpty(s)) return 0;
+        int n = 0, i = 0;
+        while ((i = s.IndexOf(needle, i, StringComparison.Ordinal)) >= 0) { n++; i += needle.Length; }
+        return n;
+    }
+
+    static double[] Apply(double[] m, double x, double y) =>
+        new[] { m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5] };
+
+    static (double minX, double minY, double maxX, double maxY) BBox(double[] xy)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+        for (int i = 0; i < xy.Length; i += 2)
+        {
+            if (xy[i] < minX) minX = xy[i];
+            if (xy[i] > maxX) maxX = xy[i];
+            if (xy[i + 1] < minY) minY = xy[i + 1];
+            if (xy[i + 1] > maxY) maxY = xy[i + 1];
+        }
+        return (minX, minY, maxX, maxY);
+    }
+
+    /// <summary>
+    /// 状态程序进协议：steps / spawn / destroy 三块都要在，
+    /// `state` 与 `dt` 两种表达式节点也要能被序列化 —— 缺一样，运行时那边就是"程序到了但不执行"。
+    /// </summary>
+    static int TestEntityProgram()
+    {
+        int fail = 0;
+        var path = new GHCE.Types.PathDef { Id = "g_prog", XY = new double[] { 0, 0, 100, 100 } };
+        var def = new GHCE.Types.EntityDef { Id = "e_prog", Path = path, Count = 4, Speed = 0 };
+
+        var prog = new GHCE.Types.EntityProgramDef();
+        prog.Steps.Add(new GHCE.Types.EntityStepDef
+        {
+            Slot = "vx",
+            Op = "add",
+            Expr = GHCE.Types.RuntimeExprDef.Bin("mul",
+                GHCE.Types.RuntimeExprDef.State("x"),
+                GHCE.Types.RuntimeExprDef.DeltaTime()),
+        });
+        prog.SpawnWhen = GHCE.Types.RuntimeExprDef.Bin("gt",
+            GHCE.Types.RuntimeExprDef.State("age"), GHCE.Types.RuntimeExprDef.Const(1));
+        prog.SpawnCount = 2;
+        prog.MaxGen = 2;
+        prog.DestroyWhen = GHCE.Types.RuntimeExprDef.Bin("gt",
+            GHCE.Types.RuntimeExprDef.State("age"), GHCE.Types.RuntimeExprDef.Const(4));
+        prog.Keep = 8;
+        def.Program = prog;
+
+        var keyBefore = prog.Key();
+        prog.Steps[0].Slot = "vy";
+        var keyAfter = prog.Key();
+        Console.WriteLine($"  program key changes with slot: {keyBefore != keyAfter}");
+        if (keyBefore == keyAfter) fail++;
+
+        // 深拷贝：改副本不能影响原对象（管道电池靠这个不互相污染）
+        var copy = def.Duplicate();
+        copy.Program.Steps[0].Slot = "aux";
+        bool deep = def.Program.Steps[0].Slot == "vy" && copy.Program.Steps[0].Slot == "aux";
+        Console.WriteLine($"  program deep copy: {deep}");
+        if (!deep) fail++;
+
+        var canvas = new GHCE.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
+        var list = new System.Collections.Generic.List<GHCE.Types.GHCE_Entity>
+        {
+            new GHCE.Types.GHCE_Entity(def),
+        };
+        var json = new GHCE.Bridge.PatchBuilder().Build(
+            canvas, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), list, null, out var summary);
+        var flat = json == null ? "" : json.Replace(" ", "");
+
+        bool hasProgram = flat.Contains("\"program\"");
+        bool hasStep = flat.Contains("\"slot\":\"vy\"") && flat.Contains("\"op\":\"add\"");
+        bool hasState = flat.Contains("\"o\":\"state\"") && flat.Contains("\"n\":\"x\"");
+        bool hasDt = flat.Contains("\"o\":\"dt\"");
+        bool hasSpawn = flat.Contains("\"spawn\"") && flat.Contains("\"maxGen\":2") && flat.Contains("\"count\":2");
+        bool hasDestroy = flat.Contains("\"destroy\"") && flat.Contains("\"keep\":8");
+
+        Console.WriteLine($"  program in patch: program={hasProgram} step={hasStep} state={hasState} dt={hasDt} spawn={hasSpawn} destroy={hasDestroy}  ({summary})");
+        if (!hasProgram || !hasStep || !hasState || !hasDt || !hasSpawn || !hasDestroy)
+        {
+            fail++;
+            Console.WriteLine("  FAIL: 状态程序没有完整进入 patch");
+        }
+
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-entity-program.json"), json);
+        return fail;
+    }
+
 }

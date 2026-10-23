@@ -14,7 +14,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>GHCE</AssemblyName>
     <RootNamespace>GHCE</RootNamespace>
-    <Version>0.17.0</Version>
+    <Version>0.32.0</Version>
     <Title>GHCE · Grasshopper Creative Engine</Title>
     <Description>把 Grasshopper 定义为创意编程前端，浏览器为执行环境。</Description>
     <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
@@ -68,6 +68,10 @@
     </EmbeddedResource>
     <EmbeddedResource Include="$(RuntimeDir)\src\*.js">
       <LogicalName>rt/src/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <!-- Three.js r186：WebGPU 渲染器 + TSL。三个文件互为相对依赖，必须同目录 -->
+    <EmbeddedResource Include="$(RuntimeDir)\vendor\*.js">
+      <LogicalName>rt/vendor/%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

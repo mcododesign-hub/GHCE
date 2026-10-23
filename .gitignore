@@ -20,3 +20,6 @@ mock/node_modules/
 *.suo
 .DS_Store
 Thumbs.db
+
+# ---- 分发产物（.yak 包）----
+dist/

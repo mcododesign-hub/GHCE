@@ -64,7 +64,8 @@ const first = await ev(`(() => {
   return { title: document.title, conn: G.client.state, rev: G.doc.rev, ...G.doc.stats(),
            drawn: G.renderer.lastDraw.drawn, skipped: G.renderer.lastDraw.skipped,
            canvasW: G.renderer.canvas.width,
-           scenesVisible: !!document.getElementById('scenes').offsetParent };
+           devHidden: document.getElementById('dev').hidden,
+           hudGone: !document.getElementById('hud') };
 })()`);
 await sleep(1600);
 const second = await ev('({ rev: window.GHCE.doc.rev })');
@@ -77,7 +78,7 @@ check('WS 连上插件自己的桥', first.conn === 'open', first.conn);
 check('60 条路径全部入库', first.geoms === 60 && first.cmds === 60, { geoms: first.geoms, cmds: first.cmds });
 check('全部被绘制，无跳过', first.drawn === 60 && first.skipped === 0, { drawn: first.drawn, skipped: first.skipped });
 check('收到的帧在持续变化', second.rev > first.rev, { from: first.rev, to: second.rev });
-check('接真 GH 时隐藏模拟桥的演示按钮', first.scenesVisible === false, first.scenesVisible);
+check('接真 GH 时默认不出现任何面板', first.hudGone === true && first.devHidden === true, { hudGone: first.hudGone, devHidden: first.devHidden });
 
 const shot = await send('Page.captureScreenshot', {
   format: 'png',

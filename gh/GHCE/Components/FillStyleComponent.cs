@@ -15,24 +15,24 @@ namespace GHCE.Components
     public class FillStyleComponent : GH_Component
     {
         public FillStyleComponent()
-            : base("Fill Style", "Fill", "改一批指令的填充（颜色 / 透明度 / 清除填充）", "GHCE", "Drawing") { }
+            : base("Fill Style", "Fill", "Override fill on a batch of commands", "GHCE", "Drawing") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000e4");
         protected override Bitmap Icon => Icons.FillStyle;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "待改填充的绘图指令", GH_ParamAccess.list);
-            p.AddColourParameter("Colour", "Colour", "填充颜色（不接 = 保留）", GH_ParamAccess.item);
-            p.AddNumberParameter("Alpha", "Alpha", "填充不透明度 0-1（不接 = 保留）", GH_ParamAccess.item);
-            p.AddBooleanParameter("Clear", "Clear", "打开 = 取消填充（优先于 Colour）", GH_ParamAccess.item, false);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "Commands to modify", GH_ParamAccess.list);
+            p.AddColourParameter("Colour", "Colour", "Fill color. Leave empty to keep the current value", GH_ParamAccess.item);
+            p.AddNumberParameter("Alpha", "Alpha", "Fill alpha 0-1. Leave empty to keep the current value", GH_ParamAccess.item);
+            p.AddBooleanParameter("Clear", "Clear", "Clear the fill. Takes precedence over Colour", GH_ParamAccess.item, false);
 
             for (int i = 1; i <= 2; i++) p[i].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "新指令（原指令不被改写）", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Command(), "Commands", "Cmds", "New commands. The originals are left untouched", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -72,7 +72,7 @@ namespace GHCE.Components
             }
 
             DA.SetDataList(0, outCmds);
-            Message = clear ? "no fill" : (hex == null ? "未改任何项" : hex + (hasAlpha ? $" · α {Clamp01(alpha):0.##}" : ""));
+            Message = clear ? "no fill" : (hex == null ? "Nothing was modified" : hex + (hasAlpha ? $" · α {Clamp01(alpha):0.##}" : ""));
         }
 
         static double Clamp01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;

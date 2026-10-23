@@ -19,34 +19,34 @@ namespace GHCE.Components
     public class EntityLookComponent : GH_Component
     {
         public EntityLookComponent()
-            : base("Entity Look", "Look", "粒子的形状 / 颜色 / 线宽 / 拖尾 / 图层", "GHCE", "Entity") { }
+            : base("Entity Look", "Look", "Instance appearance: shape, color, width, trail, layer", "GHCE", "Entity") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000a6");
         protected override Bitmap Icon => Icons.EntityLook;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Entity(), "Blueprint", "BP", "来自 Entity Blueprint", GH_ParamAccess.item);
+            p.AddParameter(new Param_GHCE_Entity(), "Blueprint", "BP", "Blueprint from Entity Blueprint", GH_ParamAccess.item);
             var shape = new Grasshopper.Kernel.Parameters.Param_Curve
             {
                 Name = "Shape",
                 NickName = "Shape",
-                Description = "粒子形状：Rhino 里单条曲线（不要接多条）。不接 = 方块点",
+                Description = "Shape: a single Rhino curve. Leave empty for square points",
                 Access = GH_ParamAccess.item,
                 Optional = true,
             };
             p.AddParameter(shape);
-            p.AddColourParameter("Colour", "Col", "粒子颜色", GH_ParamAccess.item, Color.FromArgb(0xFD, 0x7A, 0xB4));
-            p.AddNumberParameter("Width", "W", "形状描边宽度（像素）", GH_ParamAccess.item, 1.0);
-            p.AddNumberParameter("Size", "Size", "形状缩放：1 = 原始大小（按最长边归一化后）", GH_ParamAccess.item, 1.8);
-            p.AddIntegerParameter("Trail", "Trail", "拖尾采样点数，0 = 关闭", GH_ParamAccess.item, 4);
-            p.AddTextParameter("Layer", "Layer", "图层名（同名归为一层）", GH_ParamAccess.item, "particles");
-            p.AddBooleanParameter("Fade", "Fade", "按寿命淡出", GH_ParamAccess.item, true);
+            p.AddColourParameter("Colour", "Col", "Instance color", GH_ParamAccess.item, Color.FromArgb(0xFD, 0x7A, 0xB4));
+            p.AddNumberParameter("Width", "W", "Shape stroke width in pixels", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Size", "Size", "Shape scale. 1 = original size after normalizing by the longest edge", GH_ParamAccess.item, 1.8);
+            p.AddIntegerParameter("Trail", "Trail", "Trail sample count. 0 disables trails", GH_ParamAccess.item, 4);
+            p.AddTextParameter("Layer", "Layer", "Layer name. Same name shares one layer", GH_ParamAccess.item, "particles");
+            p.AddBooleanParameter("Fade", "Fade", "Fade out over lifetime", GH_ParamAccess.item, true);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Entity(), "Entities", "Ent", "带外观的蓝图，接到 Render Output", GH_ParamAccess.list);
+            p.AddParameter(new Param_GHCE_Entity(), "Entities", "Ent", "Styled blueprints for Render Output", GH_ParamAccess.list);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -54,7 +54,7 @@ namespace GHCE.Components
             var bp = new GHCE_Entity();
             if (!DA.GetData(0, ref bp) || bp.Value == null)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "缺少 Blueprint");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Missing Blueprint");
                 return;
             }
 
@@ -91,12 +91,12 @@ namespace GHCE.Components
         /// </summary>
         PathDef LocalShape(Curve c)
         {
-            if (c == null || !c.IsValid) { AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Shape 曲线无效，已忽略"); return null; }
+            if (c == null || !c.IsValid) { AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Shape curve is invalid and was ignored"); return null; }
 
             var pts = PathInputComponent.Sample(c, 0.4);
             if (pts == null || pts.Length < 2)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Shape 采样点数不足，已忽略");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Shape produced too few samples and was ignored");
                 return null;
             }
 

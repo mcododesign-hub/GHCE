@@ -18,23 +18,23 @@ namespace GHCE.Components
     public class EntityBlueprintComponent : GH_Component
     {
         public EntityBlueprintComponent()
-            : base("Entity Blueprint", "Blueprint", "沿一条曲线运动的动态对象：数量 / 速度 / 寿命 / 相位", "GHCE", "Entity") { }
+            : base("Entity Blueprint", "Blueprint", "Dynamic objects travelling along a curve: count, speed, lifetime, phase", "GHCE", "Entity") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000a5");
         protected override Bitmap Icon => Icons.EntityBlueprint;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Path(), "Path", "Path", "粒子要沿的曲线（原生 Curve 或 Path Input）", GH_ParamAccess.item);
-            p.AddIntegerParameter("Count", "N", "实例数量", GH_ParamAccess.item, 200);
-            p.AddNumberParameter("Speed", "Speed", "每秒推进的归一化弧长（1 = 一秒跑完整条）", GH_ParamAccess.item, 0.06);
-            p.AddNumberParameter("Lifetime", "Life", "寿命（秒）。0 = 永不重生，跑完一圈接着跑", GH_ParamAccess.item, 7.0);
-            p.AddNumberParameter("Phase", "Phase", "整体相位偏移（0..1）。接时间进来就是整组往前挪", GH_ParamAccess.item, 0.0);
+            p.AddParameter(new Param_GHCE_Path(), "Path", "Path", "Path the instances follow (native Curve or Path Input)", GH_ParamAccess.item);
+            p.AddIntegerParameter("Count", "N", "Instance count", GH_ParamAccess.item, 200);
+            p.AddNumberParameter("Speed", "Speed", "Normalized arc length per second (1 = one full pass in a second)", GH_ParamAccess.item, 0.06);
+            p.AddNumberParameter("Lifetime", "Life", "Lifetime in seconds. 0 = never respawn, keep looping", GH_ParamAccess.item, 7.0);
+            p.AddNumberParameter("Phase", "Phase", "Global phase offset (0..1). Feed time here to advance the whole group", GH_ParamAccess.item, 0.0);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Entity(), "Blueprint", "BP", "动态对象蓝图", GH_ParamAccess.item);
+            p.AddParameter(new Param_GHCE_Entity(), "Blueprint", "BP", "Entity blueprint", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -42,7 +42,7 @@ namespace GHCE.Components
             var pathGoo = new GHCE_Path();
             if (!DA.GetData(0, ref pathGoo) || pathGoo.Value == null)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "缺少路径输入（可直连 Curve）");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Missing path input. A native Curve can connect directly");
                 return;
             }
 
@@ -55,7 +55,7 @@ namespace GHCE.Components
 
             if (count < 0 || count > 20000)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Count 需在 0..20000 之间");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Count must be within 0..20000");
                 return;
             }
 

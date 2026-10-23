@@ -11,7 +11,7 @@ namespace GHCE
     public class GHCEInfo : GH_AssemblyInfo
     {
         public override string Name => "GHCE";
-        public override string Description => "Grasshopper Creative Coding Engine · GH 定义，浏览器执行";
+        public override string Description => "Grasshopper Creative Coding Engine. Authored in GH, executed in the browser";
         public override Guid Id => new Guid("3c9e0000-3333-4c03-9003-0000000000b1");
         public override string AuthorName => "mcodo design";
         public override string AuthorContact => "";

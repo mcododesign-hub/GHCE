@@ -143,67 +143,159 @@ op 的应用语义是**幂等**的：同一批 ops 重复应用结果一致。�
 实现方式是用虚线把路径截断（`setLineDash([len*reveal, len+10])`），因此**只对 `polyline` / `polygon` 生效**；
 `path`（贝塞尔）长度未知，会退化为完整绘制。`reveal` 优先级高于 `dash`。
 
+### Mark（v0.31，无新增 op）
+
+Mark 不是新的数据类型，就是**一批普通 DrawCommand**：
+
+```
+geom.upsert   g_brush_…      印章轮廓，局部坐标、以原点为中心，整帧只发一次
+cmd.upsert    c_mk_…  ×N     每条标记一个 id，geom 都指向同一个印章
+              transform.matrix = [cosθ·k, sinθ·k, −sinθ·k, cosθ·k, x, y]
+```
+
+要点：
+
+- **位置与朝向只存在于矩阵里**，不烘进几何。同一枚印章被几百次复用，patch 里只有一份 `geom.upsert`。
+  101 条标记的整帧约 42 KB（实测），其中几何占不到 1 KB。
+- `order` 按标记序号递增，因此同一批标记的绘制顺序稳定；跨电池的层叠用 `Layer` 控制。
+- 沿程位置 `u`（0–1）**不进协议**：`Style Map` 在 GH 求解期就把"越往后越粗"算进矩阵与样式了，
+  浏览器不需要知道某条标记来自路径的哪一段。
+- 闭合印章（圆点 / 方块 / 三角）默认带 `fill`，否则"点描"画出来是一串空心圈。
+
 ### Entity（动态对象蓝图，阶段 2）
 
 ```json
 { "id":"e_loop0", "value":{ "geom":"g_loop0", "layer":"particles", "order":0,
-  "count":320, "seed":7, "behavior":"follow-curve",
-  "speed":[0.02,0.09], "lifetime":[4,11], "trail":5,
-  "size":[1.2,2.4], "color":"#FD7AB4", "fade":true } }
+  "count":320, "speed":0.06, "lifetime":7, "phase":0, "trail":5,
+  "size":1.8, "width":1, "shape":null, "color":"#FD7AB4", "fade":true, "opacity":1 } }
 ```
 
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `geom` | string | null | 引用的几何 id（`follow-curve` 时必需） |
-| `count` | int | 0 | 展开的实例数，上限 20000 |
-| `seed` | int | 1 | 决定初始 u / 速度 / 寿命 / 尺寸的确定性种子 |
-| `behavior` | string | `follow-curve` | 已实现：`follow-curve` / `drift` / `orbit` / `attract` / `repel` / `follow-pointer`。未知值回退为 `follow-curve` |
-| `amount` | number | 1 | 行为强度：跟随的速度倍率 / 漂移倍率 / 环绕半径倍率。**不影响实例身份**，改它不会重启 |
-| `speed` | [min,max] | [0.05,0.15] | 每秒推进的归一化弧长 |
-| `lifetime` | [min,max] | [4,10] | 秒 |
+| `geom` | string | null | 引用的几何 id。程序自己写 `x`/`y` 时可以不接 |
+| `count` | int | 0 | 初始实例数，上限 20000 |
+| `speed` | number | 0.06 | 每秒推进的归一化弧长 |
+| `lifetime` | number | 7 | 秒；0 = 不按寿命重生 |
+| `phase` | number | 0 | 整体相位偏移，`u = (i / count + phase) % 1` |
 | `trail` | int | 0 | 拖尾采样点数（0 关闭） |
-| `size` | [min,max] | [1.2,2.4] | 绘制半像素 |
+| `size` | number | 1.8 | 绘制尺寸（像素） |
+| `width` | number | 1 | 形状描边宽度 |
+| `shape` | geom | null | 粒子形状（局部坐标、最长边归一化成 1）；null = 方块点 |
+| `color` | string | `#FD7AB4` | 颜色 |
 | `fade` | bool | true | 按 age/life 淡出 |
+| `opacity` | number | 1 | 整组不透明度 |
 
 **关键约定：实例身份 = `(blueprintId, index)`，与几何内容无关。**
-所以 GH 改曲线时只发 `geom.upsert`，实例的 `age` / `u` / 拖尾全部保留，只是路径换了 ——
-这正是阶段 2 验收项「同一 Entity ID 在 GH 重新求解后仍可保留状态」的实现方式。
-反之，如果 `count` / `seed` / `behavior` / `speed` / `lifetime` / `trail` 变了（定义指纹变化），才按 Restart 语义重建实例。
+所以 GH 改曲线时只发 `geom.upsert`，实例的 `age` / `u` / 拖尾全部保留，只是路径换了。
+`count` / `speed` / `lifetime` / `phase` / `trail` 变了（定义指纹变化）才按 Restart 语义重建实例；
+`program` **不在指纹里** —— 拖一根滑条改系数不该把粒子群清空。
 
-`doc.reset` 会同时清空 `Doc` 与 `EntitySystem`，两者顺序由 op 顺序保证。
-
-### Track（时间线轨道，阶段 3 B）
+#### 状态程序 `program`（v0.32）
 
 ```json
-{ "id":"a_c0", "value":{
-  "field":"reveal",
-  "targets":[{"kind":"cmd","id":"c0"}],
-  "keys":[[0,0],[2.5,1]],
-  "easing":"easeOut", "loop":false, "offset":0 } }
+"program": {
+  "steps": [
+    { "slot":"vx", "op":"add", "expr": { "o":"mul", "a": { "o":"state","n":"vx" }, "b": { "o":"dt" } } },
+    { "slot":"x",  "op":"add", "expr": { "o":"mul", "a": { "o":"state","n":"vx" }, "b": { "o":"dt" } },
+      "when": { "o":"gt", "a": { "o":"state","n":"age" }, "b": { "o":"const","v":2 } } }
+  ],
+  "spawn":   { "when": { … }, "count":2, "spread":14, "maxGen":2, "maxPop":600 },
+  "destroy": { "when": { … }, "keep":200 }
+}
+```
+
+| 槽位 | 可写 | 说明 |
+|---|---|---|
+| `x` `y` | ✅ | 页面坐标。**写了就接管运动**：不再从曲线取样 |
+| `vx` `vy` | ✅ | 速度，引擎本身不用它，纯粹给表达式做积分 |
+| `u` | ✅ | 路径参数。写了就不再自增（`speed` 失效） |
+| `size` `alpha` `aux` | ✅ | 尺寸、不透明度、一个自由标量 |
+| `age` `index` `gen` | ❌ | 只读：年龄、实例序号、代数 |
+
+- `steps` 按**数组顺序**执行；`when` 非 0 才执行（`null` = 每步都执行）。
+- `op` 只有 `set` / `add`，没有算子表 —— 行为由表达式决定。
+- 表达式节点新增 `{ "o":"state", "n":"vx" }` 与 `{ "o":"dt" }`（固定 1/60 秒）。
+- `spawn` 在条件**上升沿**触发一次：条件持续为真时每帧都生成会在一秒内爆人口。
+- 子代继承父代全部状态（`vx/vy/size/alpha/aux`），只有 `age` 归零、`gen+1`、`index` 递增。
+- `destroy.keep > 0` 时，被移除实例的最后状态留成静态残影（最多 N 个，不进 patch）。
+- 所有写入都在固定步长里执行，所以同样的步数在任何机器上得到同样的结果。
+
+`doc.reset` 会同时清空 `Doc` 与 `EntitySystem`（含残影），两者顺序由 op 顺序保证。
+
+### Track（轨道，v0.18）
+
+轨道不是独立的 op 流 —— 它挂在 `cmd.upsert` 的指令值里，跟着指令一起增删。
+一条轨只回答两件事：**我占全局时间轴的哪一段**、**这一段里播什么帧**。
+
+```json
+{ "track": {
+    "n": 25,
+    "frames": "<base64 f32，n*6 个 2D 仿射>",
+    "reveal": [0, 0.04, "…"],
+    "start": 1.5, "end": 4.5,
+    "hidden": false,
+    "easeX": [0, 0.5, 1], "easeY": [0, 0.75, 1]
+} }
 ```
 
 | 字段 | 说明 |
 |---|---|
-| `field` | `reveal` 或 `opacity` |
-| `targets` | `{kind:'cmd'|'entity', id}` 数组 |
-| `keys` | `[[t, v], …]`，秒 |
-| `easing` | `linear` / `easeIn` / `easeOut` / `easeInOut` / `easeOutBack` / `pulse` |
-| `lut` | 可选，`number[]`（64 点）。来自 Graph Mapper 采样，**存在时覆盖 `easing`** |
-| `loop` | 是否循环；`false` 时到末尾保持末值 |
-| `offset` | 整体延后（秒），用来错开多条指令 |
+| `n` | 帧数，≥ 2 |
+| `frames` | `n*6` 个 float（base64 f32），每帧一个 `[a,b,c,d,e,f]` 页面矩阵；只做生长时可为 `null` |
+| `reveal` | `n` 个 0–1；只做矩阵动画时可为 `null` |
+| `start` / `end` | 轨道在全局时间轴上的入点 / 出点（秒）。`end <= start` 视为占满整段 |
+| `hidden` | `true` = 该轨静默，不驱动，指令保持静态值（调试时临时关一条轨用） |
+| `easeX` / `easeY` | 缓动表（横轴 0–1 → 进度 0–1），可为 `null` |
 
-`field` 决定这条轨道在动什么：
+播放规则：
 
-| field | 写入 | 单位 |
+- 全局播放头 `t` 由 `doc.timeline` 决定（回绕或夹在两端）
+- 轨道局部进度 `p = clamp01((t − start) / (end − start))`，再过缓动
+- **入点前停在首帧，出点后停在末帧** —— 不会突然出现或消失
+
+### timeline.set（全局时间轴）
+
+```json
+{ "op": "timeline.set", "duration": 6, "loop": true }
+```
+
+| 字段 | 默认 | 说明 |
 |---|---|---|
-| `reveal` | `cmd.style.reveal` | 0–1 |
-| `opacity` | `cmd.opacity` | 0–1 |
-| `moveX` / `moveY` | `cmd.transform.translate` | 像素 |
-| `rotate` | `cmd.transform.rotate` | 度 |
-| `scale` | `cmd.transform.scale` 两轴 | 倍率 |
+| `duration` | 8 | 整段多长（秒）。**所有轨道共用这一条时间轴** |
+| `loop` | `true` | 回绕；`false` 时夹在 `[0, duration]`，两端保持 |
+
+这里刻意不含任何具体动画。反过来，如果把时长放进轨道，每条轨就各自有一个 0→1 的本地时钟，
+"第 0 秒淡入、第 2 秒开始转、第 5 秒收尾"这种多轨错开就无法表达了 —— 没有共同的播放头，
+就没有先后可言。
 
 **轨道只在浏览器里求值**。GH 发一次即止，画面推进不产生任何 patch —— 这是与 `Draw Progress` 电池的根本区别：
-后者是"GH 算好进度发下来"，前者是"GH 给曲线，浏览器自己跑"。
+后者是"GH 算好进度发下来"，前者是"GH 给帧序列，浏览器自己跑"。
+
+### morph（几何变形帧序列，v0.19）
+
+挂在 `cmd.upsert` 的指令值上，与 `track` 并列。一条 cmd 可以同时有 `track`（时间）和 `morph`（形态）。
+
+```json
+{ "morph": {
+    "n": 24, "count": 96, "step": 12, "closed": true,
+    "frames": "<base64 f32，n*count*2 个页面坐标>"
+} }
+```
+
+| 字段 | 说明 |
+|---|---|
+| `n` | 帧数 ≥ 2 |
+| `count` | 每帧点数 ≥ 2。**所有帧必须一致**，否则整条丢弃 |
+| `step` | 每秒帧数。素材自然时长 = `(n-1)/step`；没有 track 时拿它兜底播放 |
+| `closed` | 是否闭合 |
+| `frames` | `n·count·2` 个 float，按「第 k 帧 → 第 i 点 → x,y」顺序排列 |
+
+运行时用**与 track 相同的 `u`** 在相邻两帧之间逐顶点线性插值；`u` 有 track 就取 track 的进度，
+没有就按 `step` 播一遍后停住。三者共用同一个 `u`，形状、位置、笔画才不会各走各的。
+
+这是"任意 slider 都能动画"的落地方式：运行时不需要认识 fillet / offset / 布尔，
+只要 GH 侧把参数扫一遍、给出 N 份同拓扑几何，插值就成立。
+**硬约束是点数与顺序一致** —— 顺序错位会得到扭曲的中间态，运行时无法检测，只能由 GH 侧保证。
 
 ### 交互
 

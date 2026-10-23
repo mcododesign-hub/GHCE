@@ -10,7 +10,7 @@ using GHCE.Types;
 namespace GHCE.Components
 {
     /// <summary>
-    /// Path Input —— 把 Rhino 曲线变成"页面坐标路径"。
+    /// Path Input —— 把 Rhino 曲线变成"Page-space paths"。
     /// 这一步完成了任务书里的"世界坐标 → 页面坐标投影"，运行时因此完全不懂 Rhino。
     /// 身份 ID 由 NurbsCurve 控制点指纹生成：改采样容差不会改变身份，改曲线形状才会。
     ///
@@ -21,26 +21,26 @@ namespace GHCE.Components
     public class PathInputComponent : GH_Component
     {
         public PathInputComponent()
-            : base("Path Input", "Path In", "Rhino 曲线 → 页面坐标路径（含稳定 ID）", "GHCE", "Drawing") { }
+            : base("Path Input", "Path In", "Rhino curves to page-space paths with stable IDs", "GHCE", "Drawing") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000a2");
         protected override Bitmap Icon => Icons.PathInput;
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddCurveParameter("Geometry", "Geo", "待转换的曲线", GH_ParamAccess.list);
-            p.AddNumberParameter("Tolerance", "Tol", "采样弦高容差（页面像素）", GH_ParamAccess.item, 1.0);
+            p.AddCurveParameter("Geometry", "Geo", "Curves to convert", GH_ParamAccess.list);
+            p.AddNumberParameter("Tolerance", "Tol", "Sampling chord tolerance in page pixels", GH_ParamAccess.item, 1.0);
             p.AddParameter(new Param_GHCE_Camera(), "Camera", "Cam",
-                "可选：Project to 2D 产的相机。不接则按 1440×900 / margin 60 自动拟合", GH_ParamAccess.item);
-            p.AddTextParameter("Id", "Id", "可选：显式指定身份，缺省用几何指纹", GH_ParamAccess.list);
+                "Optional camera from Project to 2D. Falls back to a 1440x900 fit with 60px margin", GH_ParamAccess.item);
+            p.AddTextParameter("Id", "Id", "Optional explicit identity. Defaults to a geometry fingerprint", GH_ParamAccess.list);
             p[2].Optional = true;
             p[3].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Path(), "Paths", "Paths", "页面坐标路径", GH_ParamAccess.list);
-            p.AddTextParameter("Info", "Info", "采样统计", GH_ParamAccess.item);
+            p.AddParameter(new Param_GHCE_Path(), "Paths", "Paths", "Page-space paths", GH_ParamAccess.list);
+            p.AddTextParameter("Info", "Info", "Sampling summary", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -69,7 +69,7 @@ namespace GHCE.Components
                 var pts = Sample(c, tol);
                 if (pts == null || pts.Length < 2)
                 {
-                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"曲线 {i} 采样点数不足，已跳过");
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, $"Curve {i} produced too few samples and was skipped");
                     continue;
                 }
 

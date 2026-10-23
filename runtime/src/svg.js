@@ -2,7 +2,22 @@
 // 原则：能在 SVG 里表达的保持矢量；不能表达的（blend / mask）不静默丢弃，写入 <desc> 与导出报告
 
 import { flatCoords } from './geom.js';
-import { resolveMatrix } from './xform.js';
+import { resolveMatrix, resolveMorph, morphFallbackU, trackU } from './xform.js';
+
+/** morph 在当前时刻的形态 → SVG path d。导出即"这一帧的样子"，不是第一帧。 */
+function morphPathData(cmd, doc) {
+  const m = cmd.morph;
+  if (!m) return null;
+  const u = cmd.track
+    ? trackU(cmd.track, doc.time || 0, doc.timeline)
+    : morphFallbackU(m, doc.time || 0);
+  const pts = resolveMorph(m, u);
+  if (!pts || pts.length < 4) return null;
+
+  let d = `M${num(pts[0])},${num(pts[1])}`;
+  for (let i = 2; i < pts.length; i += 2) d += `L${num(pts[i])},${num(pts[i + 1])}`;
+  return m.closed ? d + 'Z' : d;
+}
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const num = (v) => (Math.round(v * 1000) / 1000).toString();
@@ -103,7 +118,7 @@ export function toSVG(doc) {
       continue;
     }
 
-    const d = pathData(geom);
+    const d = cmd.morph ? morphPathData(cmd, doc) : pathData(geom);
     if (!d) { warnings.push(`cmd ${cmd.id}: 几何无法矢量化`); continue; }
     body.push(`<path d="${d}" ${styleAttrs(cmd.style, warnings)} ${wrap.join(' ')}/>`);
     drawn++;

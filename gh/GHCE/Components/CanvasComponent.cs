@@ -9,7 +9,7 @@ namespace GHCE.Components
     public class CanvasComponent : GH_Component
     {
         public CanvasComponent()
-            : base("Canvas", "Canvas", "定义浏览器画布：尺寸 / 背景 / 像素比", "GHCE", "Output") { }
+            : base("Canvas", "Canvas", "Defines the browser canvas: size, background, pixel ratio", "GHCE", "Output") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000a1");
 
@@ -17,15 +17,15 @@ namespace GHCE.Components
 
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
-            p.AddIntegerParameter("Width", "W", "画布宽度（像素）", GH_ParamAccess.item, 1440);
-            p.AddIntegerParameter("Height", "H", "画布高度（像素）", GH_ParamAccess.item, 900);
-            p.AddColourParameter("Background", "Bg", "背景色，Alpha=0 表示透明", GH_ParamAccess.item, Color.FromArgb(255, 11, 11, 15));
-            p.AddNumberParameter("DPI Scale", "DPR", "0 = 跟随浏览器设备像素比（上限 2）", GH_ParamAccess.item, 0);
+            p.AddIntegerParameter("Width", "W", "Canvas width in pixels", GH_ParamAccess.item, 1440);
+            p.AddIntegerParameter("Height", "H", "Canvas height in pixels", GH_ParamAccess.item, 900);
+            p.AddColourParameter("Background", "Bg", "Background color. Alpha=0 renders transparent", GH_ParamAccess.item, Color.FromArgb(255, 11, 11, 15));
+            p.AddNumberParameter("DPI Scale", "DPR", "0 = follow device pixel ratio (capped at 2)", GH_ParamAccess.item, 0);
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddParameter(new Param_GHCE_Canvas(), "Canvas", "Canvas", "画布定义", GH_ParamAccess.item);
+            p.AddParameter(new Param_GHCE_Canvas(), "Canvas", "Canvas", "Canvas definition", GH_ParamAccess.item);
         }
 
         protected override void SolveInstance(IGH_DataAccess DA)
@@ -41,7 +41,7 @@ namespace GHCE.Components
 
             if (w <= 0 || h <= 0 || w > 8192 || h > 8192)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "画布尺寸需在 1..8192 之间");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Canvas size must be within 1..8192");
                 return;
             }
 

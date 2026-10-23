@@ -17,7 +17,7 @@ namespace GHCE.Components
     public class InteractionComponent : GH_Component
     {
         public InteractionComponent()
-            : base("Interaction", "Input", "读取浏览器里的指针 / 点击 / 按键（画布坐标）", "GHCE", "Input") { }
+            : base("Interaction", "Input", "Pointer, click and key state from the browser, in canvas pixels", "GHCE", "Input") { }
 
         public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000ab");
         protected override Bitmap Icon => Icons.Interaction;
@@ -26,11 +26,11 @@ namespace GHCE.Components
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddPointParameter("Pointer", "Pt", "指针位置（画布像素，左上原点，Y 向下）", GH_ParamAccess.item);
-            p.AddBooleanParameter("Inside", "In", "指针是否在画布内", GH_ParamAccess.item);
-            p.AddBooleanParameter("Down", "Down", "是否按下", GH_ParamAccess.item);
-            p.AddIntegerParameter("Clicks", "Clicks", "累计点击次数", GH_ParamAccess.item);
-            p.AddTextParameter("Keys", "Keys", "当前按下的键（小写，如 wd）", GH_ParamAccess.item);
+            p.AddPointParameter("Pointer", "Pt", "Pointer position in canvas pixels, origin top-left, Y down", GH_ParamAccess.item);
+            p.AddBooleanParameter("Inside", "In", "Whether the pointer is inside the canvas", GH_ParamAccess.item);
+            p.AddBooleanParameter("Down", "Down", "Whether the pointer is pressed", GH_ParamAccess.item);
+            p.AddIntegerParameter("Clicks", "Clicks", "Accumulated click count", GH_ParamAccess.item);
+            p.AddTextParameter("Keys", "Keys", "Currently held keys, lowercase", GH_ParamAccess.item);
         }
 
         public override void AddedToDocument(GH_Document document)
@@ -49,8 +49,8 @@ namespace GHCE.Components
         {
             if (!RuntimeStat.Fresh)
             {
-                Message = "无数据";
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "还没收到浏览器回传（预览窗是否打开？）");
+                Message = "No data";
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "No telemetry yet. Is the preview window open?");
             }
             else
             {

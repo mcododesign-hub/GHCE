@@ -63,7 +63,7 @@ namespace GHCE.Bridge
             catch (SocketException ex)
             {
                 _listener = null;
-                return $"端口 {port} 无法监听：{ex.Message}";
+                return $"Cannot listen on port {port}: {ex.Message}";
             }
         }
 
@@ -292,6 +292,31 @@ namespace GHCE.Bridge
         }
 
         /// <summary>向所有客户端推送一帧。整帧无变化时传 null，会被忽略。</summary>
+        /// <summary>
+        /// Pushes a signal definition to every client. Called every solve by Signal to Float —
+        /// about a hundred bytes at 30 Hz, which buys a stateless runtime: no registry to keep,
+        /// nothing to clean up when a component disappears.
+        /// </summary>
+        public static void PublishSignal(GHCE.Types.SignalDef s)
+        {
+            if (!IsRunning || s == null || string.IsNullOrEmpty(s.Id)) return;
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object>
+                {
+                    ["v"] = "0.1",
+                    ["t"] = "signal",
+                    ["id"] = s.Id,
+                    ["kind"] = s.Kind,
+                    ["seed"] = s.Seed,
+                    ["rate"] = s.Rate,
+                    ["args"] = s.Args,
+                });
+                Broadcast(json);
+            }
+            catch { }
+        }
+
         public static void Broadcast(string json)
         {
             if (json == null) return;

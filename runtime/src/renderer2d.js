@@ -2,7 +2,11 @@
 // 只依赖 Doc 的只读视图；不修改文档状态
 
 import { buildPath2D, flatCoords, geomLength, truncatePath2D } from './geom.js';
-import { resolveMatrix, resolveTrackMatrix, resolveTrackReveal } from './xform.js';
+import { evalExpr } from './expr.js';
+import {
+  resolveMatrix, resolveTrackMatrix, resolveTrackReveal,
+  resolveMorph, morphFallbackU, trackU,
+} from './xform.js';
 
 const DPR_CAP = 2;
 
@@ -32,6 +36,42 @@ export function parseColor(str, alphaMul = 1) {
 }
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/**
+ * 只换色相，保留底色的饱和度与明度：hue 0..1 → CSS 颜色。
+ * 为什么不是 RGB 三通道：色相循环是这类作品最常见的写法，一个表达式就够；
+ * 底色若是灰/白（饱和度≈0），自动补一档饱和度，否则换色相根本看不出来。
+ */
+export function recolor(base, hue01, alphaMul = 1) {
+  const s = String(base || '#EDEBE4').trim();
+  let r = 237, g = 235, b = 228;
+  if (s[0] === '#') {
+    let hex = s.slice(1);
+    if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
+    if (hex.length >= 6) {
+      r = parseInt(hex.slice(0, 2), 16);
+      g = parseInt(hex.slice(2, 4), 16);
+      b = parseInt(hex.slice(4, 6), 16);
+    }
+  }
+
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  let h = 0, sat = 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d > 1e-6) {
+    sat = d / (1 - Math.abs(2 * l - 1));
+    if (max === r) h = ((g - b) / d + 6) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  if (sat < 0.12) sat = 0.75;      // 灰/白底直接换色相会看不出变化
+
+  const hue = ((Number.isFinite(hue01) ? hue01 : h) % 1 + 1) % 1;
+  return `hsla(${(hue * 360).toFixed(2)},${(sat * 100).toFixed(1)}%,${(l * 100).toFixed(1)}%,${clamp01(alphaMul).toFixed(3)})`;
+}
 
 export class Renderer2D {
   constructor(host) {
@@ -71,6 +111,34 @@ export class Renderer2D {
     const path = buildPath2D(geom);
     this._pathCache.set(id, { geom, path });
     return path;
+  }
+
+  /**
+   * morph 帧 → Path2D。
+   *
+   * 缓存键是 (帧索引, 帧内小数)：同一帧内重复绘制不重复插值，跨帧才重建。
+   * 96 点的逐顶点插值大约几十微秒，但 500 条指令 × 每帧重算就不划算了。
+   */
+  _morphPath(cmd, u) {
+    const m = cmd.morph;
+    if (!m || m.n < 2) return null;
+
+    const pos = clamp01(u) * (m.n - 1);
+    const i0 = Math.floor(pos);
+    const stamp = i0 * 1000 + Math.round((pos - i0) * 500);
+    if (cmd._morphStamp === stamp) return cmd._morphPath2d;
+
+    const pts = resolveMorph(m, u);
+    if (!pts || pts.length < 4) return null;
+
+    const p = new Path2D();
+    p.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+    if (m.closed) p.closePath();
+
+    cmd._morphStamp = stamp;
+    cmd._morphPath2d = p;
+    return p;
   }
 
   /** 截断路径（生长）：同一几何的同一 reveal 只建一次 Path2D */
@@ -161,18 +229,38 @@ export class Renderer2D {
       const layer = (cmd.layer && doc.layers.get(cmd.layer)) || noLayer;
       if (layer.visible === false) continue;
 
-      const path = geom.kind === 'points' ? null : this._pathFor(cmd.geom, geom);
+      // morph 的进度要和矩阵/生长共用同一个 u，否则形状、位置、笔画会各走各的
+      let u = 0;
+      if (cmd.track) u = trackU(cmd.track, doc.time || 0, doc.timeline);
+      else if (cmd.morph) u = morphFallbackU(cmd.morph, doc.time || 0);
+
+      const path = geom.kind === 'points'
+        ? null
+        : (cmd.morph ? this._morphPath(cmd, u) : this._pathFor(cmd.geom, geom));
       if (geom.kind !== 'points' && !path) { skipped++; continue; }
 
       g.save();
-      g.globalAlpha = clamp01((layer.opacity ?? 1) * (cmd.opacity ?? 1));
+      // 绑定求值：只在这一帧的局部变量里生效，不写回 cmd —— 写回去的话
+      // 导出、SVG、下一帧的 diff 都会拿到被污染的脏值。
+      const ex = cmd.bind ? { t: doc.time || 0, vars: doc.vars } : null;
+      const bindNum = (ast, fallback) => {
+        if (!ex || !ast) return fallback;
+        const v = evalExpr(ast, ex);
+        return Number.isFinite(v) ? v : fallback;
+      };
+      const opa = bindNum(cmd.bind && cmd.bind.opacity, cmd.opacity ?? 1);
+      g.globalAlpha = clamp01((layer.opacity ?? 1) * opa);
+      // 缩放绑定：半径呼吸用这一条，不必生成 morph 帧
+      const boundScale = cmd.bind && cmd.bind.scale ? bindNum(cmd.bind.scale, NaN) : NaN;
+      const boundHue = cmd.bind && cmd.bind.hue ? bindNum(cmd.bind.hue, NaN) : NaN;
       g.globalCompositeOperation = layer.blend || 'source-over';
 
       const t = cmd.transform;
       // 有 track 就用 track：它自己就是时间轴，按 doc.time 取帧。
       // 没有 track 才走 tween：progress < 1 时在 identity 与终态之间插值 —— "让 PSR 演出来"。
-      const m = cmd.track ? resolveTrackMatrix(cmd.track, doc.time || 0) : resolveMatrix(t);
+      const m = cmd.track ? resolveTrackMatrix(cmd.track, doc.time || 0, doc.timeline) : resolveMatrix(t);
       if (m) g.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+
       if (t.translate[0] || t.translate[1]) g.translate(t.translate[0], t.translate[1]);
       if (t.rotate) {
         // 协议里 rotate 用「度」（人读得懂），这里换算成弧度
@@ -181,18 +269,25 @@ export class Renderer2D {
         g.rotate(rad);
         g.translate(-t.pivot[0], -t.pivot[1]);
       }
-      if (t.scale[0] !== 1 || t.scale[1] !== 1) {
+      const sx = Number.isFinite(boundScale) ? boundScale : t.scale[0];
+      const sy = Number.isFinite(boundScale) ? boundScale : t.scale[1];
+      if (sx !== 1 || sy !== 1) {
         g.translate(t.pivot[0], t.pivot[1]);
-        g.scale(t.scale[0], t.scale[1]);
+        g.scale(sx, sy);
         g.translate(-t.pivot[0], -t.pivot[1]);
       }
 
-      const st = cmd.style.stroke;
+      const st = cmd.bind && cmd.bind.width
+        ? { ...cmd.style.stroke, width: Math.max(0, bindNum(cmd.bind.width, cmd.style.stroke.width)) }
+        : cmd.style.stroke;
       const fi = cmd.style.fill;
 
       if (geom.kind === 'points') {
         const f = flatCoords(geom);
-        const col = parseColor(st.color || fi.color || '#fff', st.alpha);
+        const baseCol = st.color || fi.color || '#fff';
+        const col = Number.isFinite(boundHue)
+          ? recolor(baseCol, boundHue, st.alpha)
+          : parseColor(baseCol, st.alpha);
         if (f && col) {
           g.fillStyle = col;
           const rr = Math.max(0.5, (cmd.style.pointSize || 3) / 2);
@@ -207,7 +302,7 @@ export class Renderer2D {
         // 旧做法（虚线 dash 截断）只有描边会变短，填充永远完整 —— 填充没法"生长"。
         // path 类型（贝塞尔）弧长未知，退化为完整绘制。
         // 轨道带 reveal 序列就按时间取，否则用静态的（Draw Progress 算出来的）
-        const trackReveal = cmd.track ? resolveTrackReveal(cmd.track, doc.time || 0) : null;
+        const trackReveal = cmd.track ? resolveTrackReveal(cmd.track, doc.time || 0, doc.timeline) : null;
         const reveal = trackReveal == null ? cmd.style.reveal : trackReveal;
         let dp = path;
         if (reveal < 1 && (geom.kind === 'polyline' || geom.kind === 'polygon')) {
@@ -219,7 +314,9 @@ export class Renderer2D {
           g.fillStyle = fillCol;
           g.fill(dp, fi.rule === 'evenodd' ? 'evenodd' : 'nonzero');
         }
-        const strokeCol = parseColor(st.color, st.alpha);
+        const strokeCol = Number.isFinite(boundHue)
+          ? recolor(st.color, boundHue, st.alpha)
+          : parseColor(st.color, st.alpha);
         if (strokeCol) {
           g.strokeStyle = strokeCol;
           g.lineWidth = st.width;

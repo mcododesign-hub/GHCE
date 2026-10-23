@@ -13,6 +13,8 @@
 // p ≥ 1 时原样返回传入的矩阵，不做往返换算，避免浮点漂移。
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+// 与 doc.js 的 DEFAULT_TIMELINE.duration 保持一致
+const DEFAULT_TIMELINE_DURATION = 8;
 const TAU = Math.PI * 2;
 
 /** [a,b,c,d,e,f] → { tx, ty, rot, sx, sy }。rot 单位弧度 */
@@ -149,19 +151,73 @@ export function sampleEase(ease, u) {
   return ys[lo] + (ys[hi] - ys[lo]) * ((k - xs[lo]) / span);
 }
 
-/** 时间轨 → 归一化进度 u（已过缓动）。矩阵和 reveal 共用同一个 u，两者才不会不同步 */
-export function trackU(track, time) {
+/** 时间轨 → 归一化进度 u（已过缓动）。矩阵和 reveal 共用同一个 u，两者才不会不同步。
+ *
+ *  时间轴是**全局**的：所有轨共用一条 [0, duration] 的播放头，轨道只声明自己占其中哪一段。
+ *  这正是"第 0 秒淡入、第 2 秒开始转、第 5 秒收尾"能表达的原因 —— 没有共同的播放头，
+ *  每条轨各自 0→1，就无从比较谁先谁后。
+ *
+ *  @param track    轨道 { start, end, ease, hidden }
+ *  @param time     全局时钟（秒）
+ *  @param timeline { duration, loop }
+ */
+export function trackU(track, time, timeline) {
   if (!track) return 0;
-  const d = track.duration > 0 ? track.duration : 1;
-  const raw = time / d;
-  const p = track.loop ? ((raw % 1) + 1) % 1 : clamp01(raw);
+
+  const D = timeline && timeline.duration > 0 ? timeline.duration : DEFAULT_TIMELINE_DURATION;
+  // loop：时间回绕到 [0, D)；不 loop：夹在 [0, D]，两端保持（首帧/末帧不闪）
+  const t = timeline && timeline.loop === false
+    ? Math.min(Math.max(time, 0), D)
+    : ((time % D) + D) % D;
+
+  // 轨道没给出点（end <= start）时视为占满整段，兼容不接 Range 的用法
+  const s = Number.isFinite(track.start) ? track.start : 0;
+  const e = Number.isFinite(track.end) && track.end > s ? track.end : D;
+  const span = e - s;
+
+  // 入点之前停在首帧（p=0），出点之后停在末帧（p=1）
+  const p = span > 1e-9 ? clamp01((t - s) / span) : 1;
   return clamp01(sampleEase(track.ease, p));
 }
 
 /** 时间轨 → 此刻该用的矩阵。time 单位秒 */
-export function resolveTrackMatrix(track, time) {
-  if (!track || !track.frames || track.n < 2) return null;
-  const u = trackU(track, time);
+/**
+ * 几何 morph → 此刻的顶点缓冲（已在相邻两帧之间插值）。
+ *
+ * @param morph normalizeMorph 的结果
+ * @param u     0..1 进度。与矩阵、生长共用同一个 u —— 否则形状、位置、笔画会各走各的。
+ * @returns Float32Array（页面坐标，count*2）或 null
+ */
+export function resolveMorph(morph, u) {
+  if (!morph || morph.n < 2) return null;
+  const { n, count, frames } = morph;
+  const pos = clamp01(u) * (n - 1);
+  const i0 = Math.floor(pos);
+  const i1 = Math.min(n - 1, i0 + 1);
+  const frac = pos - i0;
+  const size = count * 2;
+  const a = i0 * size;
+
+  // 返回独立缓冲：调用方会拿它建 Path2D，共用视图容易被下游改坏
+  if (frac <= 1e-6 || i1 === i0) return frames.slice(a, a + size);
+
+  const b = i1 * size;
+  const out = new Float32Array(size);
+  for (let i = 0; i < size; i++) out[i] = frames[a + i] + (frames[b + i] - frames[a + i]) * frac;
+  return out;
+}
+
+/** 没有 Track 时的兜底进度：按素材自带的 step 播一遍，然后停住 */
+export function morphFallbackU(morph, time) {
+  if (!morph || morph.n < 2) return 0;
+  const span = (morph.n - 1) / (morph.step || 12);
+  return span > 1e-9 ? clamp01(time / span) : 1;
+}
+
+export function resolveTrackMatrix(track, time, timeline) {
+  // hidden = 这条轨静默：返回 null，让调用方退回到 cmd.transform 的静态值
+  if (!track || track.hidden || !track.frames || track.n < 2) return null;
+  const u = trackU(track, time, timeline);
   const f = track.frames;
   const pos = u * (track.n - 1);
   const i0 = Math.floor(pos);
@@ -180,10 +236,10 @@ export function resolveTrackMatrix(track, time) {
  * 时间轨 → 此刻的 reveal（0..1）。没有 reveal 序列就返回 null（表示"这条轨道不管生长"）。
  * 生长必须走这里而不是 dash：dash 只能截断描边，填充永远是完整的。
  */
-export function resolveTrackReveal(track, time) {
+export function resolveTrackReveal(track, time, timeline) {
   const r = track && track.reveal;
-  if (!r || r.length < 2) return null;
-  const u = trackU(track, time);
+  if (!r || r.length < 2 || track.hidden) return null;
+  const u = trackU(track, time, timeline);
   const pos = u * (r.length - 1);
   const i0 = Math.floor(pos);
   const i1 = Math.min(r.length - 1, i0 + 1);

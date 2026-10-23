@@ -14,6 +14,7 @@
 //   - 粒子形状由 GH 给的一条曲线决定（局部坐标，最长边归一化成 1）
 
 import { flatCoords, decodeF32 } from './geom.js';
+import { evalExpr } from './expr.js';
 
 export const FIXED_DT = 1 / 60;
 
@@ -61,6 +62,57 @@ class Sampler {
       y: lerp(this.pts[(i - 1) * 2 + 1], this.pts[i * 2 + 1], t),
     };
   }
+}
+
+const WRITABLE = new Set(['x', 'y', 'vx', 'vy', 'u', 'size', 'alpha', 'aux']);
+
+/**
+ * 状态程序（v0.32）。三个部分都可选：
+ *   steps[] 每步执行一次的写入（顺序即执行顺序）
+ *   spawn   条件上升沿生成子代
+ *   destroy 条件非 0 时移除，可留 N 个残影
+ *
+ * `ownsU` / `ownsXY` 是"写谁谁归你"的开关：写了 u 就不再自增，
+ * 写了 x/y 就不再从曲线取样。否则自定义运动会被沿曲线跑的那一步覆盖掉。
+ */
+function normalizeProgram(p) {
+  if (!p || typeof p !== 'object') return null;
+
+  const steps = Array.isArray(p.steps)
+    ? p.steps
+        .filter((s) => s && s.slot && s.expr)
+        .map((s) => ({
+          slot: String(s.slot),
+          op: s.op === 'add' ? 'add' : 'set',
+          expr: s.expr,
+          when: s.when || null,
+        }))
+    : [];
+
+  const sp = p.spawn;
+  const spawn = sp && sp.when ? {
+    when: sp.when,
+    count: Math.max(1, Math.min(64, sp.count | 0 || 1)),
+    spread: Number.isFinite(sp.spread) ? sp.spread : 0,
+    maxGen: Math.max(0, Math.min(64, sp.maxGen | 0)),
+    maxPop: Math.max(0, Math.min(20000, sp.maxPop | 0)),
+  } : null;
+
+  const de = p.destroy;
+  const destroy = de && de.when ? {
+    when: de.when,
+    keep: Math.max(0, Math.min(2000, de.keep | 0)),
+  } : null;
+
+  if (!steps.length && !spawn && !destroy) return null;
+
+  return {
+    steps,
+    spawn,
+    destroy,
+    ownsU: steps.some((s) => s.slot === 'u'),
+    ownsXY: steps.some((s) => s.slot === 'x' || s.slot === 'y'),
+  };
 }
 
 /** blueprint 的"身份指纹"：刻意不包含几何内容，只描述实例的生存规则 */
@@ -115,6 +167,8 @@ export class EntitySystem {
     this.respawns = 0;
     for (const bp of this.blueprints.values()) {
       bp.list.length = 0;
+      bp.ghosts.length = 0;
+      bp.nextIndex = 0;
       this._resize(bp);
     }
   }
@@ -137,6 +191,7 @@ export class EntitySystem {
     const def = {
       id,
       geom: v.geom || null,
+      program: normalizeProgram(v.program),
       layer: v.layer || null,
       order: v.order || 0,
       count: Math.max(0, Math.min(20000, v.count | 0)),
@@ -155,13 +210,14 @@ export class EntitySystem {
 
     const existing = this.blueprints.get(id);
     if (existing && existing.key === key) {
-      // 同一份定义：只更新非身份字段，实例状态全部保留
+      // 同一份定义：只更新非身份字段，实例状态全部保留。
+      // program 不在 key 里 —— 拖一根滑条改系数不该把粒子群清空重来。
       existing.def = { ...existing.def, ...def };
       this._resize(existing);
       return;
     }
     // 定义变了：重建（Restart 语义），几何变了不算定义变
-    const bp = { def, key, list: [] };
+    const bp = { def, key, list: [], ghosts: [], nextIndex: 0 };
     this.blueprints.set(id, bp);
     this._resize(bp);
   }
@@ -181,6 +237,7 @@ export class EntitySystem {
    */
   _makeEntity(bp, index) {
     const d = bp.def;
+    if ((bp.nextIndex | 0) <= index) bp.nextIndex = index + 1;
     const n = Math.max(1, d.count);
     const life = d.lifetime > 0 ? d.lifetime : Infinity;
     return {
@@ -190,6 +247,9 @@ export class EntitySystem {
       age: life === Infinity ? 0 : (index / n) * life,
       life,
       size: d.size,
+      // 状态程序的槽位。没有程序时它们只是闲置字段，不影响旧行为。
+      vx: 0, vy: 0, alpha: 1, aux: 0, gen: 0, spawned: false,
+      placed: false,
       x: 0, y: 0,
       trail: d.trail > 0 ? new Float32Array(d.trail * 2) : null,
       trailCount: 0,
@@ -245,6 +305,19 @@ export class EntitySystem {
     return steps;
   }
 
+  /** 固定步长手动推进：不经过累加器，所以结果与帧率无关（测试与离屏导出用）。 */
+  step(doc, steps = 1) {
+    for (let i = 0; i < steps; i++) this._step(doc, FIXED_DT);
+  }
+
+  /**
+   * 一个固定步。
+   *
+   * 有两种运动：
+   *   1. 没有 program —— v0.15 的"沿曲线跑"，行为完全不变；
+   *   2. 有 program —— 先跑内置的那一步（除非程序自己写了 u / x / y），
+   *      再按顺序执行写入，最后判定销毁与分裂。
+   */
   _step(doc, dt) {
     this.time += dt;
     this.frame++;
@@ -252,28 +325,65 @@ export class EntitySystem {
 
     for (const bp of this.blueprints.values()) {
       const d = bp.def;
-      total += bp.list.length;          // 先计数：重生分支会 continue，不能漏计
-
+      const prog = d.program;
       const sampler = this._samplerFor(d, doc);
-      if (!sampler) continue;           // 没有曲线就没有运动 —— 这是唯一语义
+      // 没有程序就必须有曲线；程序自己写了 x/y 的话，曲线可以没有
+      if (!sampler && !(prog && prog.ownsXY)) continue;
 
-      for (let i = 0; i < bp.list.length; i++) {
-        const e = bp.list[i];
+      const list = bp.list;
+      total += list.length;
+      const next = [];
+      const pop = { n: list.length };
+
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
         e.age += dt;
 
         if (e.age >= e.life) {
-          // Restart：身份不变，状态按同一个确定性公式重建（不是重新掷骰子）
+          // 寿命到了：身份不变，按确定性公式重建（与 v0.15 一致）
           const fresh = this._makeEntity(bp, i);
           fresh.age = 0;
-          bp.list[i] = fresh;
+          next.push(fresh);
           this.respawns++;
           continue;
         }
 
-        e.u = (e.u + e.speed * dt) % 1;
-        const p = sampler.pointAt(e.u);
-        e.x = p.x;
-        e.y = p.y;
+        if (sampler && !e.placed) {
+          const p0 = sampler.pointAt(e.u);
+          e.x = p0.x;
+          e.y = p0.y;
+          e.placed = true;
+        }
+
+        if (prog) {
+          if (!prog.ownsU) e.u = (e.u + e.speed * dt) % 1;
+          if (!prog.ownsXY && sampler) {
+            const p = sampler.pointAt(e.u);
+            e.x = p.x;
+            e.y = p.y;
+          }
+
+          const { ctx, killed } = this._runSteps(e, prog, doc, dt);
+
+          if (killed) {
+            if (prog.destroy.keep > 0) {
+              bp.ghosts.push({ x: e.x, y: e.y, size: e.size, alpha: e.alpha });
+              while (bp.ghosts.length > prog.destroy.keep) bp.ghosts.shift();
+            }
+            pop.n--;
+            continue;
+          }
+
+          if (prog.spawn) this._spawn(bp, e, prog, ctx, next, pop);
+
+          if (e.age < e.life) alive++;
+        } else {
+          e.u = (e.u + e.speed * dt) % 1;
+          const p = sampler.pointAt(e.u);
+          e.x = p.x;
+          e.y = p.y;
+          if (e.age < e.life) alive++;
+        }
 
         if (e.trail) {
           // 每 3 个物理步记一个采样点：同样的拖尾长度，视觉上是 3 倍时间跨度，
@@ -287,8 +397,10 @@ export class EntitySystem {
           }
         }
 
-        if (e.age < e.life) alive++;
+        next.push(e);
       }
+
+      bp.list = next;
     }
 
     this.stats.blueprints = this.blueprints.size;
@@ -296,16 +408,87 @@ export class EntitySystem {
     this.stats.alive = alive;
     this.stats.respawns = this.respawns;
   }
+
+  /**
+   * 执行状态程序里的写入，返回本步的求值上下文与"是否该销毁"。
+   *
+   * 上下文只建一次，spawn / destroy 复用同一份 —— 否则同一步里
+   * `when` 与写入读到的 astate 可能不是同一个时刻的值。
+   */
+  _runSteps(e, prog, doc, dt) {
+    const ctx = { t: this.time, dt, vars: doc.vars, state: e };
+
+    for (const st of prog.steps) {
+      if (st.when) {
+        const c = evalExpr(st.when, ctx);
+        if (!Number.isFinite(c) || c === 0) continue;
+      }
+      const v = evalExpr(st.expr, ctx);
+      if (!Number.isFinite(v) || !WRITABLE.has(st.slot)) continue;
+      e[st.slot] = st.op === 'add' ? e[st.slot] + v : v;
+    }
+
+    if (e.size < 0) e.size = 0;
+    if (e.alpha < 0) e.alpha = 0;
+    else if (e.alpha > 1) e.alpha = 1;
+
+    let killed = false;
+    if (prog.destroy) {
+      const c = evalExpr(prog.destroy.when, ctx);
+      killed = Number.isFinite(c) && c !== 0;
+    }
+    return { ctx, killed };
+  }
+
+  /**
+   * 上升沿生成子代。子代**默认继承父代全部状态**（速度/尺寸/透明度/aux），
+   * 只有 age 归零、gen+1、index 递增 —— "变得不一样"由表达式读 index / gen 自己算，
+   * 引擎不掷骰子。
+   */
+  _spawn(bp, e, prog, ctx, next, pop) {
+    const sp = prog.spawn;
+    const c = evalExpr(sp.when, ctx);
+    const on = Number.isFinite(c) && c !== 0;
+
+    if (!on) { e.spawned = false; return 0; }
+    if (e.spawned) return 0;          // 条件持续为真时只生成一次
+    e.spawned = true;
+
+    if (sp.maxGen > 0 && e.gen >= sp.maxGen) return 0;
+    if (sp.maxPop > 0 && pop.n + sp.count > sp.maxPop) return 0;
+    if (pop.n + sp.count > 20000) return 0;
+
+    const d = bp.def;
+    for (let k = 0; k < sp.count; k++) {
+      const a = (k / sp.count) * Math.PI * 2 + e.gen * 0.7;
+      next.push({
+        index: bp.nextIndex++,
+        u: e.u, speed: e.speed, life: e.life,
+        age: 0,
+        size: e.size,
+        vx: e.vx, vy: e.vy, alpha: e.alpha, aux: e.aux,
+        gen: e.gen + 1, spawned: false, placed: true,
+        x: e.x + Math.cos(a) * sp.spread,
+        y: e.y + Math.sin(a) * sp.spread,
+        trail: d.trail > 0 ? new Float32Array(d.trail * 2) : null,
+        trailCount: 0, trailHead: 0,
+      });
+      pop.n++;
+    }
+    return sp.count;
+  }
+
   draw(ctx, doc) {
     for (const bp of this.blueprints.values()) {
       const d = bp.def;
-      if (!d.visible || !bp.list.length) continue;
+      if (!d.visible || (!bp.list.length && !bp.ghosts.length)) continue;
 
       const layer = d.layer ? doc.layers.get(d.layer) : null;
       if (layer && layer.visible === false) continue;
 
       ctx.save();
-      ctx.globalAlpha = (layer ? (layer.opacity ?? 1) : 1) * d.opacity;
+      const base = (layer ? (layer.opacity ?? 1) : 1) * d.opacity;
+      ctx.globalAlpha = base;
       if (layer && layer.blend) ctx.globalCompositeOperation = layer.blend;
       ctx.fillStyle = d.color;
       ctx.strokeStyle = d.color;
@@ -317,7 +500,7 @@ export class EntitySystem {
           const n = e.trailCount;
           const cap = e.trail.length / 2;
           // 从旧到新画：越旧越透明
-          ctx.globalAlpha = (layer ? (layer.opacity ?? 1) : 1) * d.opacity * 0.5;
+          ctx.globalAlpha = base * 0.5;
           ctx.beginPath();
           for (let k = 0; k < n; k++) {
             const idx = (e.trailHead - n + k + cap) % cap;
@@ -328,29 +511,41 @@ export class EntitySystem {
           ctx.stroke();
         }
 
-        ctx.globalAlpha = (layer ? (layer.opacity ?? 1) : 1) * d.opacity * fade;
+        ctx.globalAlpha = base * fade * (e.alpha == null ? 1 : e.alpha);
+        this._paintInstance(ctx, d, e.x, e.y, e.size);
+      }
 
-        if (d.shape) {
-          // 形状是"最长边归一化成 1"的局部折线，所以这里乘 Size 就是最终像素大小。
-          // 不 ctx.scale()：那样 lineWidth 也会被缩放，Width 就不是像素了。
-          const sc = e.size;
-          const pts = d.shape.coords;
-          const n = pts.length / 2;
-          ctx.beginPath();
-          for (let k = 0; k < n; k++) {
-            const x = e.x + pts[k * 2] * sc;
-            const y = e.y + pts[k * 2 + 1] * sc;
-            if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          }
-          if (d.shape.closed) { ctx.closePath(); ctx.fill(); }
-          ctx.lineWidth = Math.max(0.2, d.width);
-          ctx.stroke();
-        } else {
-          const r = e.size;
-          ctx.fillRect(e.x - r, e.y - r, r * 2, r * 2);
+      // 残影：被销毁实例的最后状态，不参与步进、不进 patch
+      if (bp.ghosts.length) {
+        for (const g of bp.ghosts) {
+          ctx.globalAlpha = base * 0.35 * (g.alpha == null ? 1 : g.alpha);
+          this._paintInstance(ctx, d, g.x, g.y, g.size);
         }
       }
+
       ctx.restore();
+    }
+  }
+
+  /** 画一个实例（形状或方块点）。残影与实体共用，避免两份绘制代码走形。 */
+  _paintInstance(ctx, d, x, y, size) {
+    if (d.shape) {
+      // 形状是"最长边归一化成 1"的局部折线，所以这里乘 Size 就是最终像素大小。
+      // 不 ctx.scale()：那样 lineWidth 也会被缩放，Width 就不是像素了。
+      const pts = d.shape.coords;
+      const n = pts.length / 2;
+      ctx.beginPath();
+      for (let k = 0; k < n; k++) {
+        const px = x + pts[k * 2] * size;
+        const py = y + pts[k * 2 + 1] * size;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      if (d.shape.closed) { ctx.closePath(); ctx.fill(); }
+      ctx.lineWidth = Math.max(0.2, d.width);
+      ctx.stroke();
+    } else {
+      const r = size;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
     }
   }
 
@@ -365,6 +560,9 @@ export class EntitySystem {
       us: bp.list.slice(0, 5).map((e) => +e.u.toFixed(3)),
       xs: bp.list.slice(0, 5).map((e) => Math.round(e.x)),
       pts: bp.list.slice(0, 8).map((e) => [Math.round(e.x), Math.round(e.y)]),
+      gens: bp.list.slice(0, 8).map((e) => e.gen || 0),
+      ghosts: bp.ghosts.length,
+      hasProgram: !!bp.def.program,
     };
   }
 }
