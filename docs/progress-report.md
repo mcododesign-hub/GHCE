@@ -4,12 +4,12 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | **GHCE 0.32.0** |
+| 版本 | **GHCE 0.32.1** |
 | 报告日期 | 2026-10-23 |
 | 代码仓库 | `github.com/mcododesign-hub/GHCE` |
 | 技术形态 | Rhino 插件（`.gha`）+ 内嵌浏览器预览窗 + 独立 Web 运行时 |
 | 规模 | C# 8,117 行 / 运行时 JS 3,947 行 / 验证脚本 3,171 行 |
-| 交付物 | 45 只电池、13 个数据类型、58 个 GUID、协议 V0.1 |
+| 交付物 | 46 只电池、13 个数据类型、59 个 GUID、协议 V0.1 |
 
 ---
 
@@ -29,7 +29,7 @@ GHCE 把 Grasshopper 当成一个**可视化代码编辑器**：几何在 GH 里
 | 阶段 6 发布封装 | 未开始 | 已具备运行时导出能力，尚未做作品包与播放器 |
 | 阶段 7 AI / MCP | 未开始 | — |
 
-**验证状态**：137 项运行时断言 + 45 只电池探针全部通过（详见第 5 节）。
+**验证状态**：137 项运行时断言 + 46 只电池探针全部通过（详见第 5 节）。
 
 **研发节奏**：2026-10-22 起自阶段 0 搭建，两日内完成阶段 0–3 与三维主干，迭代至 0.28.2；每一轮都以"验证脚本 + 探针断言"收尾，不以"打开看一眼没报错"作为完成标准。
 
@@ -254,6 +254,7 @@ click ─► Event Rule ─► 变量 v_w ─► Bind(width = 1.5 + 6·v_w) ─�
 |---|---|---|---|
 | `Runtime Var` | Name, Initial | Expression | 声明变量（名字即身份，初值在重置时恢复） |
 | `Runtime Time` | Scale, Offset | Expression | 浏览器时钟，GH 只拼树不求值 |
+| `Runtime DT` | — | Expression | 固定步长 1/60 秒，积分用；步长只在这一个地方定义 |
 | `Runtime Math` | A, B, Op | Expression | 1–8 基本运算，9 A>B，10 A<B，11 noise |
 | `Runtime Remap` | X, In, Out | Expression | 区间映射（在 GH 侧展开，运行时无新算子） |
 | `Runtime Select` | Condition, A, B | Expression | 条件非 0 取 A |
@@ -288,7 +289,7 @@ WebSocket + JSON，`{v, t, seq, ts, ...}` 封帧；核心消息是 `patch`（一
 
 ---
 
-## 4. 电池一览（45 只）
+## 4. 电池一览（46 只）
 
 | 分类 | 电池 |
 |---|---|
@@ -297,7 +298,7 @@ WebSocket + JSON，`{v, t, seq, ts, ...}` 封帧；核心消息是 `patch`（一
 | **Entity**（6） | Entity Blueprint, Entity Look, Read State, Write State, Spawn, Destroy |
 | **Random**（5） | Random, Noise 1D, Noise 2D, Noise 3D, Signal to Float |
 | **3D**（8） | Mesh Input, Point 3D, Curve 3D, Transform 3D, Draw 3D, Draw Points, Camera 3D, Scene 3D |
-| **Runtime**（7） | Runtime Var, Runtime Time, Runtime Math, Runtime Remap, Runtime Select, Bind, Event Rule |
+| **Runtime**（8） | Runtime Var, Runtime Time, Runtime DT, Runtime Math, Runtime Remap, Runtime Select, Bind, Event Rule |
 | **Input**（3） | Interaction, Event Trigger, Runtime Info |
 | **Output**（2） | Canvas, Render Output |
 
@@ -317,8 +318,8 @@ WebSocket + JSON，`{v, t, seq, ts, ...}` 封帧；核心消息是 `patch`（一
 
 | 检查组 | 内容 |
 |---|---|
-| 结构 | 45 只电池可实例化、端口名/类型/访问方式/可选性、图标非空 |
-| 身份 | 58 个 GUID 全局唯一（撞 GUID 会让电池互相顶掉且不报错） |
+| 结构 | 46 只电池可实例化、端口名/类型/访问方式/可选性、图标非空 |
+| 身份 | 59 个 GUID 全局唯一（撞 GUID 会让电池互相顶掉且不报错） |
 | 图标 | 逐只图标：底色取不透明像素亮度众数，字形覆盖率 ≥ 4%，与底色亮度差 ≥ 80 |
 | 数据 | Goo 往返、Param 访问模式、Path→Command 转换 |
 | 变换 | 锚点/环绕/位移/回退 4 组世界→页面坐标断言 |

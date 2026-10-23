@@ -103,6 +103,7 @@ namespace GHCE
         public static Bitmap ExprMath => Get("expr-math", DrawExprMath);
         public static Bitmap Bind => Get("expr-bind", DrawBind);
         public static Bitmap EventRule => Get("event-rule", DrawEventRule);
+        public static Bitmap ExprDelta => Get("expr-delta", DrawExprDelta);
         public static Bitmap ExprRemap => Get("expr-remap", DrawExprRemap);
         public static Bitmap ExprSelect => Get("expr-select", DrawExprSelect);
 
@@ -792,6 +793,23 @@ namespace GHCE
                 });
                 g.FillPath(b, p);
             }
+        }
+
+        // DT：三角形（Δ）+ 一截基线 —— "每一小步"
+        static void DrawExprDelta(Graphics g)
+        {
+            Tile24(g);
+            using (var p = new GraphicsPath())
+            using (var pen = new Pen(Ink, 1.4f) { LineJoin = LineJoin.Round })
+            {
+                p.AddPolygon(new[]
+                {
+                    new PointF(12f, 5.5f), new PointF(19.5f, 18f), new PointF(4.5f, 18f),
+                });
+                g.DrawPath(pen, p);
+            }
+            using (var pen = new Pen(Pink, 1.5f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawLine(pen, 9f, 13.5f, 15f, 13.5f);
         }
 
         // Remap：两个刻度之间拉一根箭头 —— "从一段区间搬到另一段"

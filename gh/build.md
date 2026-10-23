@@ -1466,7 +1466,7 @@ Blueprint → Look → Write State ×N → Spawn → Destroy → Render Output
 |---|---|
 | `verify.mjs` | **99/99**（新增 10 项：程序到达、`ownsXY/ownsU`、人口阶梯 72→168、销毁与残影 48→144、代数上限、固定步长可复现、`rev` 不变） |
 | `verify-3d` / `replay-csharp` / `replay-3d` | 17/17 + 15/15 + 6/6 |
-| 探针 | 45 只电池 / 13 数据类型 / **58 个 GUID 唯一**；`program` 的 4 组断言（指纹、深拷贝、patch 字段、`state`/`dt` 节点） |
+| 探针 | 46 只电池 / 13 数据类型 / **59 个 GUID 唯一**；`program` 的 4 组断言（指纹、深拷贝、patch 字段、`state`/`dt` 节点） |
 
 人口阶梯是这一版最硬的一条：24 个初代在 1.0s 各分裂一次 → 72；子代在 2.0s 再分裂 → 168；
 第三代被 `MaxGen=2` 挡住；子代 6s 到龄销毁 → 120；孙代 7s 销毁 → 24，残影 144 个。
@@ -1474,3 +1474,11 @@ Blueprint → Look → Write State ×N → Spawn → Destroy → Render Output
 截图：`docs/shots/v032-behavior.png`。
 
 安装：0.32.0，4,151,296 bytes，md5 `535926B8C385`。
+
+### 0.32.1 补一只 `Runtime DT`
+
+做连接路径文档时发现一个洞：表达式里能写 `{o:'dt'}`，但**没有电池能产出它**，
+用户只能手填 `1/60`。那等于把引擎的步长复制进作品 —— 哪天步长改成 1/120，
+所有作品的速度会静默翻倍。
+
+`Runtime DT`（0 输入 / 1 输出）把它变成唯一来源。安装：0.32.1，4,152,320 bytes，md5 `988A23C769C8`。

@@ -14,7 +14,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>GHCE</AssemblyName>
     <RootNamespace>GHCE</RootNamespace>
-    <Version>0.32.0</Version>
+    <Version>0.32.1</Version>
     <Title>GHCE · Grasshopper Creative Engine</Title>
     <Description>把 Grasshopper 定义为创意编程前端，浏览器为执行环境。</Description>
     <NoWarn>$(NoWarn);NETSDK1138</NoWarn>

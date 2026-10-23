@@ -110,6 +110,37 @@ namespace GHCE.Components
     }
 
     /// <summary>
+    /// Runtime DT —— 固定步长（秒）。
+    ///
+    /// 为什么值得单独一只：行为程序里的积分都长这样 `x += vx * dt`。
+    /// 让用户手填 1/60 等于把"引擎的步长"复制到作品里 —— 哪天引擎换成 1/120，
+    /// 所有作品的速度会静默翻倍。有这个端口，步长就只有一处定义。
+    ///
+    /// 无输入：它不是一个可调参数，而是运行时的常量。
+    /// </summary>
+    public class RuntimeDeltaComponent : ExprComponentBase
+    {
+        public RuntimeDeltaComponent()
+            : base("Runtime DT", "DT", "Fixed simulation step in seconds. Use it for integration") { }
+
+        public override Guid ComponentGuid => new Guid("5a0c7e10-2222-4b02-8d02-0000000000bb");
+        protected override Bitmap Icon => Icons.ExprDelta;
+
+        protected override void RegisterInputParams(GH_InputParamManager p) { }
+
+        protected override void RegisterOutputParams(GH_OutputParamManager p)
+        {
+            p.AddParameter(new Param_GHCE_Expr(), "Expression", "Expr", "Fixed step expression", GH_ParamAccess.item);
+        }
+
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            DA.SetData(0, new GHCE_Expr(RuntimeExprDef.DeltaTime()));
+            Message = "dt = 1/60";
+        }
+    }
+
+    /// <summary>
     /// Runtime Math —— 两个表达式算一个。
     /// 操作是序号不是字符串：1 add / 2 sub / 3 mul / 4 div / 5 min / 6 max / 7 sin(A) / 8 clamp01(A)。
     /// 7 与 8 只用 A，B 可以不接。
