@@ -143,6 +143,7 @@ namespace Colugo
         public static Bitmap ShaderTime => Get("sh-time", DrawShaderTime);
         public static Bitmap ShaderVector => Get("sh-vec", DrawShaderVector);
         public static Bitmap PostFX => Get("fx-bloom", DrawPostFX);
+        public static Bitmap ShaderCanvas => Get("sh-canvas", DrawShaderCanvas);
         public static Bitmap DataImage => Get("data-image", DrawDataImage);
 
         static Bitmap Get(string key, Action<Graphics> draw)
@@ -1603,6 +1604,20 @@ namespace Colugo
                 g.FillEllipse(core, 9f, 9f, 6f, 6f);
             using (var pen = new Pen(Color.FromArgb(0xB0, Pink), 1.1f))
                 g.DrawEllipse(pen, 6f, 6f, 12f, 12f);
+        }
+
+
+        static void DrawShaderCanvas(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xC0, Ink), 1.1f))
+                g.DrawRectangle(pen, 4f, 6f, 16f, 12f);
+            using (var b = new SolidBrush(Color.FromArgb(0x80, Pink)))
+                g.FillRectangle(b, 4f, 6f, 8f, 12f);
+            using (var b2 = new SolidBrush(Color.FromArgb(0x50, Green)))
+                g.FillRectangle(b2, 12f, 6f, 8f, 12f);
+            using (var pen2 = new Pen(Color.FromArgb(0xD0, Ink), 1f))
+                g.DrawLine(pen2, 7f, 15f, 17f, 9f);
         }
 
     }

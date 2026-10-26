@@ -535,6 +535,36 @@ namespace Colugo.Components
         }
     }
 
+
+    public class ShaderCanvasComponent : ShaderBattery
+    {
+        public ShaderCanvasComponent() : base("Shader Canvas", "SCan",
+            "Use the 2D canvas as a texture. Screen mode works everywhere; UV needs mesh UVs",
+            new Guid("5a0c7e10-2222-4b02-8d02-0000000000de")) { }
+        protected override Bitmap Icon => Icons.ShaderCanvas;
+
+        protected override void RegisterInputParams(GH_InputParamManager p) =>
+            p.AddIntegerParameter("Space", "S",
+                "1 UV (sticks to the surface, needs mesh UVs) · 2 Screen (projected, always works)",
+                GH_ParamAccess.item, 2);
+
+        protected override void RegisterOutputParams(GH_OutputParamManager p) =>
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Shader", "S",
+                "vec3 texture colour", GH_ParamAccess.item);
+
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            int space = 2;
+            DA.GetData(0, ref space);
+            // 默认 screen：多数 Mesh 没有 UV 属性，uv 模式会贴成一片单色，比"没有纹理"更难查
+            var e = NewExpr();
+            var id = e.Add("canvasTex", "v3", ("space", space == 1 ? "uv" : "screen"));
+            e.OutId = id;
+            e.Type = "v3";
+            DA.SetData(0, new Colugo_ShaderExpr(e));
+        }
+    }
+
     /* ---------------- 挂到三维命令上 ---------------- */
 
     public class ApplyMaterialComponent : ShaderBattery

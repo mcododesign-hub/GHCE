@@ -1,4 +1,4 @@
-// main.js — 运行时装配：文档状态 → 渲染器 → 桥
+﻿// main.js — 运行时装配：文档状态 → 渲染器 → 桥
 import { Doc } from './doc.js';
 import { Renderer2D, recolor, setImageReadyHandler } from './renderer2d.js';
 import { BridgeClient } from './bridge-client.js';
@@ -32,6 +32,8 @@ const stage = document.getElementById('stage-inner');
 const renderer = new Renderer2D(stage);
 // 三维是独立的一层：独立 canvas、独立渲染循环，与二维互不驱动
 const scene3d = new Scene3D(document.getElementById('layer-3d'));
+// S4：2D 画布同时作为 3D 的纹理源。Sets 记下引用，等 three 加载完再真正建纹理。
+scene3d.setSourceCanvas(renderer.canvas);
 renderer.setDoc(doc);
 renderer.setEntitySystem(entities);
 entities.setPointer(pointer);
@@ -102,6 +104,8 @@ function tick(now) {
     if (!drawSuspended) {
       renderer.draw();
       drawFails = 0;
+      // 只有 2D 真的重画了才需要重传纹理；无条件标记等于每帧把整张画布传一遍 GPU
+      scene3d.markSourceDirty();
     }
     clock.frame++;
     drawCount++;

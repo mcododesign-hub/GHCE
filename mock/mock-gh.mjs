@@ -1266,6 +1266,77 @@ function sceneBloom() {
   return base;
 }
 
+
+/* ---------------- v0.38：2D 画布当 3D 纹理（S4）---------------- */
+
+const SHADER_IR_CANVAS = {
+  v: 1,
+  nodes: [{ id: 'c', op: 'canvasTex', space: 'screen', ty: 'v3' }],
+  out: 'c',
+};
+
+/**
+ * 2D 层画一块鲜艳的方块，3D 的立方体用 canvasTex 采样它。
+ * 判据很直接：立方体表面应该出现 2D 那块的图案/颜色，而不是材质常量色。
+ */
+function sceneCanvasTex() {
+  const cube = buildCube(52);
+  const geoms = new Map();
+  const cmds = [];
+
+  // 2D：一块洋红方块 + 一条青色斜线，方便看出纹理方向和翻转
+  geoms.set('g_texbg', {
+    kind: 'polygon', enc: 'f32',
+    coords: b64f32([420, 200, 1040, 200, 1040, 700, 420, 700]),
+  });
+  cmds.push({
+    id: 'c_texbg', geom: 'g_texbg', layer: 'ink', order: 0,
+    visible: true, opacity: 1,
+    style: { stroke: { color: '#000', width: 0, alpha: 0 }, fill: { color: '#ff2e7e', alpha: 1, rule: 'nonzero' } },
+    transform: { matrix: [1, 0, 0, 1, 0, 0], progress: 1 },
+  });
+  geoms.set('g_texline', {
+    kind: 'polygon', enc: 'f32',
+    coords: b64f32([520, 640, 940, 280]),
+  });
+  cmds.push({
+    id: 'c_texline', geom: 'g_texline', layer: 'ink', order: 1,
+    visible: true, opacity: 1,
+    style: { stroke: { color: '#22d3ee', width: 18, alpha: 1 }, fill: { color: null, alpha: 0, rule: 'nonzero' } },
+    transform: { matrix: [1, 0, 0, 1, 0, 0], progress: 1 },
+  });
+
+  return {
+    canvas: { w: W, h: H, bg: '#07070a', dpr: 'auto', clearMode: 'clear' },
+    layers: [{ id: 'ink', name: 'ink', order: 0, opacity: 1, blend: 'source-over' }],
+    geoms,
+    cmds,
+    entities: [],
+    scene3d: {
+      bg: '#07070a',
+      lights: false,
+      ambient: 1,
+      camera: null,
+      meshes: [{
+        id: 'm_tcube',
+        positions: b64f32(cube.pos),
+        indices: b64u32(cube.idx),
+        count: cube.pos.length / 3,
+        tris: cube.idx.length / 3,
+      }],
+      cmds: [{
+        id: 'c3_tex',
+        mesh: 'm_tcube',
+        material: { mode: 5, color: '#e8e6df', size: 2, glow: 0, opacity: 1, shader: SHADER_IR_CANVAS },
+        xform: { matrix: b64f32(rotZ(24, 20, 0, 0)), frames: null, n: 0 },
+        visible: true,
+        order: 0,
+      }],
+      objects: ['c3_tex'],
+    },
+  };
+}
+
 /* ---------------- 场景注册 ---------------- */
 
 const SCENES = {
@@ -1280,6 +1351,7 @@ const SCENES = {
   shaderdisplace: { build: sceneShaderDisplace, tick: null, hz: 0 },
   pointsizes: { build: scenePointSizes, tick: null, hz: 0 },
   bloom: { build: sceneBloom, tick: null, hz: 0 },
+  canvasex: { build: sceneCanvasTex, tick: null, hz: 0 },
   binding: { build: sceneBinding, tick: null, hz: 0 },
   marks: { build: sceneMarks, tick: null, hz: 0 },
   behavior: { build: sceneBehavior, tick: null, hz: 0 },

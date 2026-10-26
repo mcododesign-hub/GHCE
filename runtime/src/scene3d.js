@@ -67,10 +67,44 @@ export class Scene3D {
     // 后处理（S5）：fx 配置变了才重建，否则每帧重建 pipeline 等于每帧新建 RT
     this._postFX = null;
     this._fxKey = '';
+    // 2D 画布当纹理用（S4）：两侧渲染循环不同，纹理只在 2D 真的重画过之后才上传
+    this.canvasTexture = null;
+    this._srcCanvas = null;
+    // 只有真的有材质采样了 canvasTex，才值得每帧上传整张画布 ——
+    // 否则一个 2D 动画场景会把 1440×900 的纹理每帧传一遍 GPU，直接把渲染拖死。
+    this._usesCanvasTex = false;
 
     // 视图旋转（不改 GH 数据，只改相机；在自动取景的基础上叠加）
     this._orbit = { yaw: 0, pitch: 0, dragging: false, lastX: 0, lastY: 0 };
     this._bindOrbit();
+  }
+
+  /**
+   * S4：把 2D 画布挂成纹理源。
+   * 2D 和 3D 是两个独立循环（各自 requestAnimationFrame 驱动，但同一个 tick 里 2D 先画），
+   * 所以纹理不能每帧无条件上传 —— 那样等于每帧把整张画布传一遍 GPU。
+   * 由调用方在"2D 真的重画了"之后调 markSourceDirty()。
+   */
+  setSourceCanvas(canvas) {
+    if (!canvas) return;
+    // 顺序很重要：先判断 three 有没有加载完，再判断"是不是同一张画布"。
+    // 反过来的话，第一次调用会把 _srcCanvas 设上，加载完再调就被当成重复而早退，
+    // 纹理永远建不出来。
+    if (!this.T) { this._pendingSource = canvas; return; }
+    if (this._srcCanvas === canvas && this.canvasTexture) return;
+    this._srcCanvas = canvas;
+    this.canvasTexture = this.T.CanvasTexture ? new this.T.CanvasTexture(canvas) : null;
+    if (this.canvasTexture) {
+      this.canvasTexture.flipY = true;
+      this.canvasTexture.needsUpdate = true;
+      this._dirty = true;
+    }
+  }
+
+  markSourceDirty() {
+    if (!this._usesCanvasTex || !this.canvasTexture) return;
+    this.canvasTexture.needsUpdate = true;
+    this._dirty = true;
   }
 
   /** three 加载完成前收到的 op 全部排队，加载后一次性回放 */
@@ -90,7 +124,12 @@ export class Scene3D {
         const { THREE, tsl } = await loadThree();
         this.T = THREE;
         this.tsl = tsl;
-        this.shader = new ShaderCompiler(tsl, THREE);
+        this.shader = new ShaderCompiler(tsl, THREE, () => this.canvasTexture);
+        if (this._pendingSource) {
+          const c = this._pendingSource;
+          this._pendingSource = null;
+          this.setSourceCanvas(c);
+        }
         this._initRenderer();
         const queued = this._queue;
         this._queue = [];
@@ -423,6 +462,7 @@ export class Scene3D {
         shaderHash = r.hash;
         this.lastShaderError = '';
         if (r.uniforms && r.uniforms.includes('uTime')) this._shaderAnimated = true;
+        if (r.ops && r.ops.includes('canvasTex')) this._usesCanvasTex = true;
       } else {
         // 坏一个材质，不是坏一个作品：回退到常量色，诊断留给 Runtime Info 读
         this.lastShaderError = r.errors.join('; ');
@@ -710,6 +750,7 @@ export class Scene3D {
   }
 
   _clear() {
+    this._usesCanvasTex = false;
     for (const [id, obj] of this.objects) {
       this.scene.remove(obj);
       this.objects.delete(id);

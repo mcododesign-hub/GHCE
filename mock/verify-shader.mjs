@@ -278,6 +278,53 @@ const fxOff = await ev(`(() => {
 check('bloom = 0 时 pipeline 被拆掉', fxOff.hasPipeline === false, fxOff);
 check('拆掉后重建键被清空（下次开启会重建）', fxOff.fxKey === '', fxOff.fxKey);
 
+/* ---------- S4：2D 画布当 3D 纹理 ---------- */
+const ct = await ev(`(async () => {
+  const G = window.Colugo;
+  G.selectScene('canvasex');
+  const t0 = performance.now();
+  while (performance.now() - t0 < 20000) {
+    const S = G.scene3d;
+    if (S && S.canvasTexture && S.shader && (S.shader.lastOps || []).includes('canvasTex')) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  await new Promise(r => setTimeout(r, 700));
+  const S = G.scene3d;
+  const img = S.canvasTexture && S.canvasTexture.image;
+  return {
+    hasTex: !!S.canvasTexture,
+    texSize: img ? [img.width, img.height] : null,
+    needsUpdate: S.canvasTexture ? !!S.canvasTexture.needsUpdate : false,
+    ops: S.shader.lastOps || [],
+    objects: S.stats().objects,
+    err: S.lastShaderError || '',
+    // 诊断：2D 画布 (200,200) 处到底画了什么
+    px2d: (() => {
+      try {
+        const c = G.renderer.canvas;
+        const d = c.getContext('2d').getImageData(700, 450, 1, 1).data;
+        return { wh: [c.width, c.height], px: [d[0], d[1], d[2], d[3]] };
+      } catch (e) { return String(e.message); }
+    })(),
+  };
+})()`);
+
+check('2D 图层真的画了内容（不是空画布）',
+  !!ct.px2d && Array.isArray(ct.px2d.px) && ct.px2d.px[0] > 200 && ct.px2d.px[1] < 120, ct.px2d);
+check('2D 画布被挂成了 3D 纹理', ct.hasTex === true, ct);
+check('纹理尺寸跟画布一致（读到了真实 canvas）',
+  !!ct.texSize && ct.texSize[0] > 0 && ct.texSize[1] > 0, ct.texSize);
+check('canvasTex 进了 shader 图', (ct.ops || []).includes('canvasTex'), ct.ops);
+check('采样 2D 纹理时编译无错', !ct.err, ct.err);
+
+const shotT = await send('Page.captureScreenshot', { format: 'png' });
+if (shotT.data) {
+  const { writeFileSync } = await import('node:fs');
+  const pt = join(tmpdir(), 'colugo-canvastex.png');
+  writeFileSync(pt, Buffer.from(shotT.data, 'base64'));
+  console.log('  screenshot: ' + pt);
+}
+
 const bad = logs.filter((l) => /^EXC:/.test(l) || /^error:/.test(l));
 check('无控制台错误', bad.length === 0, bad);
 

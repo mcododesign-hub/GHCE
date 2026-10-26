@@ -1220,6 +1220,7 @@ class Probe
             ("Colugo.Components.ShaderVectorComponent", "Shader Vector", 3, 1),
             ("Colugo.Components.ApplyMaterialComponent", "Apply Material", 3, 1),
             ("Colugo.Components.PostFXComponent", "Post FX", 4, 1),
+            ("Colugo.Components.ShaderCanvasComponent", "Shader Canvas", 1, 1),
         };
         foreach (var e in expected)
         {

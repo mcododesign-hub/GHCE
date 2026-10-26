@@ -1,4 +1,4 @@
-// shader.js — Shader IR → TSL 节点树
+﻿// shader.js — Shader IR → TSL 节点树
 //
 // 为什么是"扁平节点表 + 连接表"而不是嵌套 JSON：
 // 增量更新要按节点 id 做 diff。嵌套结构一旦内层变，整棵树都得重发；
@@ -45,6 +45,8 @@ function inferType(node, ins) {
     case 'vec2':
       return 'v2';
     case 'vec3':
+      return 'v3';
+    case 'canvasTex':
       return 'v3';
     case 'time':
       return 'f';
@@ -107,9 +109,12 @@ export class ShaderCompiler {
    * @param {object} tsl  three/tsl 命名空间
    * @param {object} THREE three/webgpu
    */
-  constructor(tsl, THREE) {
+  constructor(tsl, THREE, sourceTexture) {
     this.tsl = tsl;
     this.THREE = THREE;
+    /** 返回 2D 画布纹理（没有就返回 null）。用函数而不是直接传对象，
+     *  因为 2D canvas 在 Scene3D 构造时可能还没挂上来。 */
+    this._sourceTexture = sourceTexture || (() => null);
     /** name → { node, type, value }  同一 name 复用同一个 uniform 对象，否则每帧新对象会让 GPU 侧不断重建 */
     this.uniforms = new Map();
     /** 每次 compile 的统计，Runtime Info 直接读它 */
@@ -255,6 +260,17 @@ export class ShaderCompiler {
           node = t.vec3(x, y, z);
           ty = 'v3';
         }
+      } else if (op === 'canvasTex') {
+        // 把 2D 画布当纹理。space: 'uv' 贴表面（mesh 要有 uv 属性），
+        // 'screen' 是屏幕空间投影（永远可用，适合当背景/遮罩）
+        const tex = self._sourceTexture();
+        if (!tex) {
+          errors.push('没有可用的 2D 画布纹理');
+          return null;
+        }
+        const coord = n.space === 'screen' ? t.screenUV : t.uv();
+        node = t.texture(tex, coord).rgb;
+        ty = 'v3';
       } else if (op === 'step') {
         const edge = ref(n.e0 ?? 0.5), x = ref(n.x);
         if (!x) return null;
