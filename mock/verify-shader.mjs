@@ -127,6 +127,27 @@ check('uTime uniform 已注册（时钟走作品时间，不是 TSL 自带 time�
   m.uniforms.some((k) => k.startsWith('uTime')), m.uniforms);
 check('材质缓存 key 里带结构哈希', /[0-9a-f]{8}/.test(m.keys[0] || ''), m.keys);
 
+/* ---------- S2：shader.uniform 增量 op 不能重建材质 ---------- */
+const uni = await ev(`(() => {
+  const S = window.Colugo.scene3d;
+  const before = S.shader.stats.builds;
+  const beforeMat = S.materials.size;
+  const beforeVal = S.shader.uniforms.get('uTime|f').value;
+  // 同一同步块里发 op 再读值：中间不会插进 render 循环，读到的就是 op 的效果
+  S.applyOps([{ op: 'shader.uniform', name: 'uTime', type: 'f', value: 42 }]);
+  const afterVal = S.shader.uniforms.get('uTime|f').value;
+  return {
+    before, after: S.shader.stats.builds,
+    beforeMat, afterMat: S.materials.size,
+    beforeVal, afterVal,
+  };
+})()`);
+
+check('shader.uniform op 真的改了 uniform 的值',
+  uni.afterVal === 42 && uni.beforeVal !== 42, uni);
+check('改 uniform 值不重编译（builds 不变）', uni.after === uni.before, uni);
+check('改 uniform 值不新建材质（材质数不变）', uni.afterMat === uni.beforeMat, uni);
+
 /* ---------- 编译器本身：白名单 / 环 / 悬空引用 / 哈希稳定性 ---------- */
 const c = await ev(`(() => {
   const C = window.Colugo.scene3d.shader;

@@ -131,6 +131,12 @@ export class Scene3D {
         case 'mesh.remove': this._removeMesh(op.id); break;
         case 'cmd3d.upsert': this._upsertCmd(op.id, op.value); break;
         case 'cmd3d.remove': this._removeCmd(op.id); break;
+        // S2：只有 uniform 值变了。不重建材质、不重传几何，只改 uniform 的 value。
+        // 如果这个名字还没注册（比如首帧走的是 upsert），这里什么都不做 —— 那是正常时序，
+        // 下一次结构变化会把整条 cmd 发过来。
+        case 'shader.uniform':
+          if (this.shader) this.shader.setUniform(op.name, op.type, op.value);
+          break;
         case 'scene3d.set': this._setConfig(op.value); break;
         case 'scene3d.clear': this._clear(); break;
         default: break;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
@@ -89,6 +89,11 @@ namespace Colugo.Types
         public string Key() =>
             $"{Mode}|{Color}|{Size:0.####}|{Glow:0.####}|{Opacity:0.####}" +
             (Shader == null ? "" : "|S:" + Shader.Key());
+
+        /// <summary>结构键：shader 部分剔除 uniform 值，其余同上。</summary>
+        public string StructKey() =>
+            $"{Mode}|{Color}|{Size:0.####}|{Glow:0.####}|{Opacity:0.####}" +
+            (Shader == null ? "" : "|S:" + Shader.StructKey());
     }
 
     /// <summary>

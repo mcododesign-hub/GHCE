@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -21,6 +21,11 @@ namespace Colugo.Bridge
         readonly Dictionary<string, string> _evtKey = new Dictionary<string, string>();
         readonly Dictionary<string, string> _meshKey = new Dictionary<string, string>();
         readonly Dictionary<string, string> _cmd3dKey = new Dictionary<string, string>();
+        // S2：存"上一次的结构键"和"上一次的 uniform 值"。
+        // 结构没变、只有 uniform 值变了，就不发整条 cmd3d，只发一条 shader.uniform。
+        readonly Dictionary<string, string> _cmd3dStruct = new Dictionary<string, string>();
+        readonly Dictionary<string, Dictionary<string, (string type, object val)>> _cmd3dUniforms
+            = new Dictionary<string, Dictionary<string, (string type, object val)>>();
         string _scene3dKey;
         bool _has3D;
         string _canvasKey;
@@ -490,7 +495,47 @@ namespace Colugo.Bridge
 
                     seenCmd3.Add(c.Id);
                     var ck = Cmd3DKey(c);
+                    var sk2 = Cmd3DStructKey(c);
+                    var uNow = c.Material?.Shader?.UniformMap()
+                               ?? new Dictionary<string, (string type, object val)>();
+
                     if (!snapshot && _cmd3dKey.TryGetValue(c.Id, out var pc) && pc == ck) continue;
+
+                    // 结构没变、只有 uniform 值变了 → 只发增量。
+                    // 这是 S2 的全部价值：拖一根滑条不该重传 13 个节点的 IR。
+                    if (!snapshot
+                        && _cmd3dKey.ContainsKey(c.Id)
+                        && _cmd3dStruct.TryGetValue(c.Id, out var ps) && ps == sk2)
+                    {
+                        _cmd3dUniforms.TryGetValue(c.Id, out var uOld);
+                        foreach (var kv in uNow)
+                        {
+                            if (uOld != null && uOld.TryGetValue(kv.Key, out var ov)
+                                && Equals(ov.val, kv.Value.val)) continue;
+                            ops.Add(new Dictionary<string, object>
+                            {
+                                ["op"] = "shader.uniform",
+                                ["name"] = kv.Key,
+                                ["type"] = kv.Value.type,
+                                ["value"] = kv.Value.val,
+                            });
+                        }
+                        // uniform 被删掉的情况走 upsert（图结构已经不同了，只是这里兜底）
+                        bool removed = uOld != null && uOld.Keys.Any(n => !uNow.ContainsKey(n));
+                        if (removed)
+                        {
+                            ops.Add(new Dictionary<string, object>
+                            {
+                                ["op"] = "cmd3d.upsert",
+                                ["id"] = c.Id,
+                                ["value"] = Cmd3DPayload(c)
+                            });
+                        }
+                        _cmd3dKey[c.Id] = ck;
+                        _cmd3dStruct[c.Id] = sk2;
+                        _cmd3dUniforms[c.Id] = uNow;
+                        continue;
+                    }
 
                     ops.Add(new Dictionary<string, object>
                     {
@@ -499,6 +544,8 @@ namespace Colugo.Bridge
                         ["value"] = Cmd3DPayload(c)
                     });
                     _cmd3dKey[c.Id] = ck;
+                    _cmd3dStruct[c.Id] = sk2;
+                    _cmd3dUniforms[c.Id] = uNow;
                 }
 
                 foreach (var old in new List<string>(_meshKey.Keys))
@@ -512,6 +559,8 @@ namespace Colugo.Bridge
                     if (seenCmd3.Contains(old)) continue;
                     ops.Add(new Dictionary<string, object> { ["op"] = "cmd3d.remove", ["id"] = old });
                     _cmd3dKey.Remove(old);
+                    _cmd3dStruct.Remove(old);
+                    _cmd3dUniforms.Remove(old);
                 }
 
                 var sk = Scene3DKey(scene3d);
@@ -676,6 +725,9 @@ namespace Colugo.Bridge
                 ["tris"] = m.TriCount,
             };
         }
+
+        static string Cmd3DStructKey(Cmd3DDef c) =>
+            $"{c.MeshId}|{c.Material?.StructKey() ?? "-"}|{c.Xform?.Key() ?? "-"}|{(c.Visible ? 1 : 0)}|{c.Order}";
 
         static string Cmd3DKey(Cmd3DDef c) =>
             $"{c.MeshId}|{c.Material?.Key() ?? "-"}|{c.Xform?.Key() ?? "-"}|{(c.Visible ? 1 : 0)}|{c.Order}";

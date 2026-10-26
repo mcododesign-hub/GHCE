@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -34,12 +34,22 @@ namespace Colugo.Types
         }
 
         /// 用于增量判断：op 相同、参数相同就是同一个节点
-        public string Key()
+        public string Key() => BuildKey(false);
+
+        /// <summary>
+        /// 结构键：剔除 uniform 的**值**。
+        /// 用来判断"这张图的结构有没有变"——拖动 uniform 的值不算结构变化，
+        /// 走增量 op 就够了，不该让整条 cmd3d 重发。
+        /// </summary>
+        public string StructKey() => BuildKey(true);
+
+        string BuildKey(bool skipUniformValue)
         {
             var sb = new System.Text.StringBuilder();
             sb.Append(Id).Append(':').Append(Op);
             foreach (var k in Args.Keys.OrderBy(x => x, StringComparer.Ordinal))
             {
+                if (skipUniformValue && Op == "uniform" && k == "value") continue;
                 sb.Append('|').Append(k).Append('=');
                 if (Args[k] is double[] arr) sb.Append(string.Join(",", arr.Select(v => v.ToString("R"))));
                 else if (Args[k] is double dv) sb.Append(dv.ToString("R"));
@@ -109,6 +119,24 @@ namespace Colugo.Types
 
         public string Key() =>
             string.Join(";", Nodes.Select(n => n.Key())) + "=>" + OutId + ":" + Type;
+
+        /// <summary>结构键：剔除 uniform 值。拖滑条不该让结构键变。</summary>
+        public string StructKey() =>
+            string.Join(";", Nodes.Select(n => n.StructKey())) + "=>" + OutId + ":" + Type;
+
+        /// <summary>uniform 名 → (类型, 值)。增量 diff 靠它算出"哪个值变了"。</summary>
+        public Dictionary<string, (string type, object val)> UniformMap()
+        {
+            var d = new Dictionary<string, (string, object)>();
+            foreach (var n in Nodes)
+            {
+                if (n.Op != "uniform") continue;
+                if (!(n.Args.GetValueOrDefault("name") is string name) || string.IsNullOrEmpty(name)) continue;
+                var type = n.Args.GetValueOrDefault("type") as string ?? "f";
+                d[name] = (type, n.Args.GetValueOrDefault("value"));
+            }
+            return d;
+        }
 
         public override string ToString() =>
             IsValid ? $"{Type} · {Nodes.Count} 节点 → {OutId}" : "<empty>";

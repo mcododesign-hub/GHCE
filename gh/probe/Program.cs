@@ -1378,6 +1378,66 @@ class Probe
             }
         }
 
+        // --- S2：拖 uniform 的滑条只能发一条 shader.uniform，不能重发整条 cmd3d ---
+        {
+            var pbU = new Colugo.Bridge.PatchBuilder();
+            var cvU = new Colugo.Types.CanvasDef { W = 800, H = 600 };
+            var emptyCmds = new System.Collections.Generic.List<Colugo.Types.Colugo_Command>();
+
+            Colugo.Types.ShaderExprDef MakeU(double v, bool extraNode = false)
+            {
+                var e = new Colugo.Types.ShaderExprDef("uni001");
+                var u = e.Add("uniform", "f", ("name", "uAmp"), ("value", v), ("type", "f"));
+                var c0u = e.Add("const", "v3", ("v", new[] { 0.0, 0.0, 0.0 }));
+                var c1u = e.Add("const", "v3", ("v", new[] { 1.0, 0.55, 0.1 }));
+                var tt = extraNode ? e.Add("abs", "f", ("a", u)) : u;
+                var m2 = e.Add("mix", "v3", ("a", c0u), ("b", c1u), ("t", tt));
+                e.OutId = m2;
+                e.Type = "v3";
+                return e;
+            }
+
+            var quadU = new Colugo.Types.MeshDef
+            {
+                Id = "m_uni",
+                Positions = new double[] { -1, -1, 0, 1, -1, 0, 1, 1, 0 },
+                Indices = new int[] { 0, 1, 2 },
+                Xform = new Colugo.Types.Transform3DDef(),
+            };
+            var cmdU = new Colugo.Types.Cmd3DDef
+            {
+                Id = "c3_uni",
+                MeshId = quadU.Id,
+                Mesh = quadU,
+                Material = new Colugo.Types.Material3DDef { Mode = 5, Shader = MakeU(0.2) },
+                Xform = quadU.Xform,
+            };
+            var scU = new Colugo.Types.Scene3DDef { Background = "#000000", Lights = false };
+            scU.Cmds.Add(cmdU);
+
+            var j1 = pbU.Build(cvU, emptyCmds, null, scU, out _);
+
+            // 只改 uniform 的值
+            cmdU.Material.Shader = MakeU(0.9);
+            var j2 = pbU.Build(cvU, emptyCmds, null, scU, out _);
+
+            // 再往图里插一个节点（结构真的变了）
+            cmdU.Material.Shader = MakeU(0.9, extraNode: true);
+            var j3 = pbU.Build(cvU, emptyCmds, null, scU, out _);
+
+            bool firstFull = j1 != null && j1.Contains("\"cmd3d.upsert\"");
+            bool valueOnly = j2 != null && j2.Contains("\"op\":\"shader.uniform\"")
+                             && !j2.Contains("\"cmd3d.upsert\"")
+                             && !j2.Contains("\"mesh.upsert\"");
+            bool structFull = j3 != null && j3.Contains("\"cmd3d.upsert\"");
+
+            int len2 = j2?.Length ?? 0;
+            int len1 = j1?.Length ?? 0;
+            Console.WriteLine($"  shader uniform diff: first-full={firstFull} value-only={valueOnly} struct-full={structFull}"
+                              + $"  bytes {len1} -> {len2}（省 {len1 - len2}）");
+            if (!firstFull || !valueOnly || !structFull) fail++;
+        }
+
         return fail;
     }
 

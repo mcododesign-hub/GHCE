@@ -1611,3 +1611,36 @@ vec3 输出类型）。
 材质 key 带 C# 算出的结构哈希、只有一个材质、无控制台错误。
 截图 `%TEMP%\colugo-shader-replay.png` 上是 `sin(position.x * 0.12 + time)` 的条纹，
 深蓝到暖橙约两个周期 —— C# 算的图，在 GPU 上画出来了。
+
+### 0.35.0 S2：uniform 只发增量，不重传 IR
+
+S1 的材质缓存已经做到"改 uniform 值不重编译"，但网络层还在重发**整条 cmd3d**
+（含 13 个节点的 IR JSON）。这一版把网络层也收干净。
+
+**做法：键拆成两把。**
+
+| 键 | 内容 | 用途 |
+|---|---|---|
+| `Key()` | 全部参数，含 uniform 值 | 完全没变就跳过 |
+| `StructKey()` | **剔除 uniform 的 value** | 结构没变、只有值变了 → 走增量 |
+| `UniformMap()` | uniform 名 → (类型, 值) | 算出"到底哪个值变了" |
+
+diff 逻辑：完整键相同 → 跳过；结构键相同 → 只发 `shader.uniform {name, type, value}`；
+结构键不同 → 照旧发 `cmd3d.upsert`。
+
+**实测收益：1064 bytes → 151 bytes，省 86%。** 而且省的是"每次拖滑条"。
+
+运行时侧只加一行分发：`case 'shader.uniform': this.shader.setUniform(...)`。
+`setUniform` 只改 uniform 的 `.value`，不碰节点树、不碰材质缓存。
+
+**顺手修了 pack-yak.ps1 的一个真 bug**：脚本开头设了 `ErrorActionPreference='Stop'`，
+而 yak 会把 `[warn]` 写进 stderr（"Content version doesn't match manifest" 就是，
+它是正常的），于是"带警告的正常构建"被当成异常抛掉，报"yak build 没有产出 .yak"，
+但手动跑同一条命令却成功。现在那段临时切成 `Continue`。
+
+安装：0.35.0，4,210,688 bytes，md5 `8C50C82B0883417B0BFE84760012D55E`。
+包：`dist/colugo-0.35.0-rh8_36-any.yak`，910,246 bytes，md5 `3D33478174C146D13B66B529E7BB5911`。
+
+验证：探针新增 1 项（首帧全量 / 只改值发增量 / 改结构回全量，三段都判真假）；
+`verify-shader` **23/23**（新增 shader.uniform op 真的改值、不重编译、不新建材质）。
+全套：109 + 17 + 15 + 6 + 23 + 11 = **181 项**。

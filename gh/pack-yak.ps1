@@ -76,7 +76,13 @@ keywords:
 
 Push-Location $stage
 try {
+    # yak 会把 [warn] 写进 stderr，而脚本开头设了 ErrorActionPreference='Stop'，
+    # 于是"正常但带警告"的构建会被当成异常抛掉 —— 表现是"yak build 没有产出 .yak"，
+    # 但手动跑同一条命令却是成功的。这里临时放开。
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $out = & $yak build 2>&1
+    $ErrorActionPreference = $prevEap
 } finally {
     Pop-Location
 }
