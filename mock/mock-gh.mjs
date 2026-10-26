@@ -1,4 +1,4 @@
-// mock-gh.mjs — 模拟 Grasshopper 侧的桥。
+﻿// mock-gh.mjs — 模拟 Grasshopper 侧的桥。
 // 目的：在没有 Rhino 的机器上，用同一份协议驱动运行时，使 M0/M1 可在浏览器里验收。
 // 它替换的是「GH 求解 + PatchBuilder」，因此这里刻意按 GH 的语义做事：
 //   1. 先算完整文档状态，2. 与上次发出的状态做 diff，3. 只发送变化的 op。
@@ -1052,6 +1052,77 @@ function sceneImage() {
   };
 }
 
+/* ---------------- v0.34：Shader IR ---------------- */
+
+/**
+ * S1 的 golden path：Position → Sin → Mix → colorNode。
+ * 一张图同时验证两件事 —— x 变化会改变颜色（空间函数），time 增长会改变颜色（时间函数）。
+ * 用 52 尺寸的立方体：x ∈ [-26,26]，乘 0.12 后约一个 sin 周期，条纹肉眼可辨。
+ */
+const SHADER_IR_WAVE = {
+  v: 1,
+  nodes: [
+    { id: 'p', op: 'position', space: 'local' },
+    { id: 'px', op: 'swizzle', a: 'p', c: 'x', ty: 'f' },
+    { id: 'k', op: 'const', v: 0.12, ty: 'f' },
+    { id: 'm', op: 'mul', a: 'px', b: 'k', ty: 'f' },
+    { id: 'tm', op: 'time', ty: 'f' },
+    { id: 'a', op: 'add', a: 'm', b: 'tm', ty: 'f' },
+    { id: 's', op: 'sin', a: 'a', ty: 'f' },
+    { id: 'r', op: 'remap', x: 's', in0: -1, in1: 1, out0: 0, out1: 1, ty: 'f' },
+    { id: 'c0', op: 'const', v: [0.03, 0.06, 0.12], ty: 'v3' },
+    { id: 'c1', op: 'const', v: [1.0, 0.55, 0.1], ty: 'v3' },
+    { id: 'o', op: 'mix', a: 'c0', b: 'c1', t: 'r', ty: 'v3' },
+  ],
+  out: 'o',
+};
+
+function sceneShader3D() {
+  const cube = buildCube(52);
+  return {
+    canvas: { w: W, h: H, bg: '#07070a', dpr: 'auto', clearMode: 'clear' },
+    layers: [],
+    geoms: new Map(),
+    cmds: [],
+    entities: [],
+    scene3d: {
+      bg: '#07070a',
+      lights: true,
+      ambient: 1,
+      camera: null,
+      meshes: [
+        {
+          id: 'm_scube',
+          positions: b64f32(cube.pos),
+          indices: b64u32(cube.idx),
+          count: cube.pos.length / 3,
+          tris: cube.idx.length / 3,
+        },
+      ],
+      cmds: [
+        {
+          id: 'c3_shader',
+          mesh: 'm_scube',
+          material: {
+            mode: 5,               // unlit：只让 colorNode 决定颜色，不受光照干扰
+            color: '#e8e6df',
+            size: 2,
+            glow: 0,
+            opacity: 1,
+            shader: SHADER_IR_WAVE,
+          },
+          xform: { matrix: b64f32(rotZ(22, 18, 0, 0)), frames: null, n: 0 },
+          visible: true,
+          order: 0,
+        },
+      ],
+      objects: ['c3_shader'],
+    },
+  };
+}
+
+
+
 /* ---------------- 场景注册 ---------------- */
 
 const SCENES = {
@@ -1062,6 +1133,7 @@ const SCENES = {
   living: { build: sceneLiving, tick: null, hz: 0 },
   morph: { build: sceneMorph, tick: null, hz: 0 },
   scene3d: { build: scene3D, tick: null, hz: 0 },
+  shader3d: { build: sceneShader3D, tick: null, hz: 0 },
   binding: { build: sceneBinding, tick: null, hz: 0 },
   marks: { build: sceneMarks, tick: null, hz: 0 },
   behavior: { build: sceneBehavior, tick: null, hz: 0 },

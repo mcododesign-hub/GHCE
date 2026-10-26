@@ -6,6 +6,8 @@
 // 与二维层的关系：两个 canvas，两个渲染循环，互不驱动。
 // Three.js 是动态 import 的 —— 不用 3D 的作品不会为那 2.3 MB 付一分钱。
 
+import { ShaderCompiler } from './shader.js';
+
 let _three = null;
 let _tsl = null;
 
@@ -42,6 +44,7 @@ export class Scene3D {
     this.cmds = new Map();     // id -> cmd def
     this.objects = new Map();  // id -> Object3D
     this.materials = new Map();// materialKey -> Material
+    this.shader = null;        // ShaderCompiler，three 加载后才有
 
     this.config = null;        // scene3d.set 的载荷
     this.scene = null;
@@ -58,6 +61,9 @@ export class Scene3D {
     this._loading = null;
     this._dirty = false;
     this._time = 0;
+    // 有材质用了 uTime 就必须逐帧跑：否则第 566 行的提前返回会让 Shader 定格
+    this._shaderAnimated = false;
+    this.lastShaderError = '';
 
     // 视图旋转（不改 GH 数据，只改相机；在自动取景的基础上叠加）
     this._orbit = { yaw: 0, pitch: 0, dragging: false, lastX: 0, lastY: 0 };
@@ -81,6 +87,7 @@ export class Scene3D {
         const { THREE, tsl } = await loadThree();
         this.T = THREE;
         this.tsl = tsl;
+        this.shader = new ShaderCompiler(tsl, THREE);
         this._initRenderer();
         const queued = this._queue;
         this._queue = [];
@@ -315,19 +322,41 @@ export class Scene3D {
   }
 
   _material(m, kind = 'mesh') {
-    const key = `${kind}|${m.mode}|${m.color}|${m.size}|${m.glow}|${m.opacity}`;
+    const THREE = this.T;
+    const { tsl } = this;
+
+    // Shader IR：先编译，再算缓存 key。
+    // key 里放的是**结构哈希**，不含 uniform 值 —— 拖滑条改颜色时哈希不变，
+    // 材质直接命中缓存，不重建、不重编译。这就是 S2 的验收前提。
+    let shaderNode = null;
+    let shaderHash = '';
+    if (m.shader) {
+      const r = this.shader.compile(m.shader);
+      if (r.node) {
+        shaderNode = r.node;
+        shaderHash = r.hash;
+        this.lastShaderError = '';
+        if (r.uniforms && r.uniforms.includes('uTime')) this._shaderAnimated = true;
+      } else {
+        // 坏一个材质，不是坏一个作品：回退到常量色，诊断留给 Runtime Info 读
+        this.lastShaderError = r.errors.join('; ');
+        console.warn('[scene3d] shader 编译失败，回退常量色：', r.errors);
+      }
+    }
+
+    const key = `${kind}|${m.mode}|${m.color}|${m.size}|${m.glow}|${m.opacity}|${shaderHash}`;
     const hit = this.materials.get(key);
     if (hit) return hit;
 
-    const THREE = this.T;
-    const { tsl } = this;
     const c = new THREE.Color(m.color || '#e8e6df');
+    // 接了 shader 就用节点树，没接就用常量色 —— 旧定义因此一行都不用改
+    const colorNode = shaderNode || tsl.color(c);
     let mat;
 
     // 点与线只有一种画法，Mode 对它们没有意义 —— 用颜色和尺寸就够
     if (kind === 'lines') {
       mat = new THREE.LineBasicNodeMaterial();
-      mat.colorNode = tsl.color(c);
+      mat.colorNode = colorNode;
       mat.transparent = (m.opacity != null && m.opacity < 1);
       mat.opacity = m.opacity == null ? 1 : m.opacity;
       this.materials.set(key, mat);
@@ -335,7 +364,7 @@ export class Scene3D {
     }
     if (kind === 'points') {
       mat = new THREE.PointsNodeMaterial();
-      mat.colorNode = tsl.color(c);
+      mat.colorNode = colorNode;
       mat.size = m.size || 2;
       mat.sizeAttenuation = false;
       mat.transparent = (m.opacity != null && m.opacity < 1);
@@ -347,28 +376,34 @@ export class Scene3D {
     switch (m.mode) {
       case MODE.WIRE: {
         mat = new THREE.MeshBasicNodeMaterial({ wireframe: true });
-        mat.colorNode = tsl.color(c);
+        mat.colorNode = colorNode;
         break;
       }
       case MODE.POINTS: {
         mat = new THREE.PointsNodeMaterial();
-        mat.colorNode = tsl.color(c);
+        mat.colorNode = colorNode;
         mat.size = m.size || 2;
         mat.sizeAttenuation = false;
         break;
       }
       case MODE.NORMALS: {
+        // 接了 shader 时"法线着色"没有意义 —— 颜色已经由用户那棵树决定
+        if (shaderNode) {
+          mat = new THREE.MeshBasicNodeMaterial();
+          mat.colorNode = colorNode;
+          break;
+        }
         mat = new THREE.MeshNormalNodeMaterial();
         break;
       }
       case MODE.UNLIT: {
         mat = new THREE.MeshBasicNodeMaterial();
-        mat.colorNode = tsl.color(c);
+        mat.colorNode = colorNode;
         break;
       }
       default: {
         mat = new THREE.MeshStandardNodeMaterial();
-        mat.colorNode = tsl.color(c);
+        mat.colorNode = colorNode;
         mat.roughness = 0.42;
         mat.metalness = 0.05;
         if (m.glow > 0) mat.emissiveNode = tsl.color(c).mul(m.glow);
@@ -530,8 +565,10 @@ export class Scene3D {
     if (!this.renderer || !this.scene || !this.camera || !this._ready) return 0;
     this._syncSize();
     this._time += dt;
+    if (this.shader) this.shader.setTime(this._time);
 
-    const animated = [...this.cmds.values()].some((c) => c.xform && c.xform.frames);
+    const animated = this._shaderAnimated
+      || [...this.cmds.values()].some((c) => c.xform && c.xform.frames);
     if (!this._dirty && !this._needsFrame && !animated) return 0;
 
     const t0 = performance.now();
