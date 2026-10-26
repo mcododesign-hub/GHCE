@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Colugo · 电池说明</title>
+<style>
+  :root{
+    --bg:#0B0B0F; --card:#15151C; --card2:#1B1B24; --edge:#2A2A35; --edge2:#3A3A47;
+    --ink:#EDEBE4; --muted:#8A8A96; --dim:#5C5C69;
+    --pink:#FD7AB4; --green:#07A954; --blue:#0EA5E9; --amber:#F0B429;
+    --mono:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;
+    --sans:-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+    font-size:14px;line-height:1.65;-webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* ---------- 布局 ---------- */
+  .wrap{display:grid;grid-template-columns:236px minmax(0,1fr);gap:0;max-width:1320px;margin:0 auto}
+  nav{
+    position:sticky;top:0;height:100vh;overflow-y:auto;padding:26px 18px 40px;
+    border-right:1px solid var(--edge);background:linear-gradient(180deg,#0D0D12,#0B0B0F);
+  }
+  nav .brand{font-family:var(--mono);font-size:15px;letter-spacing:.06em;color:var(--ink);margin-bottom:2px}
+  nav .ver{font-family:var(--mono);font-size:11px;color:var(--dim);margin-bottom:22px}
+  nav .grp{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--dim);
+           text-transform:uppercase;margin:18px 0 6px}
+  nav a{display:block;padding:3px 8px;border-radius:6px;color:var(--muted);font-size:12.5px}
+  nav a:hover{background:var(--card);color:var(--ink);text-decoration:none}
+  main{padding:34px 40px 90px;min-width:0}
+
+  /* ---------- 头 ---------- */
+  header h1{font-size:26px;margin:0 0 6px;font-weight:600;letter-spacing:.01em}
+  header .sub{color:var(--muted);margin:0 0 20px}
+  .stat{display:flex;gap:26px;flex-wrap:wrap;margin:18px 0 30px;
+        padding:14px 18px;background:var(--card);border:1px solid var(--edge);border-radius:12px}
+  .stat div{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .stat b{color:var(--ink);font-size:15px;font-weight:600;display:block;margin-top:2px}
+
+  /* ---------- 段 ---------- */
+  section{margin:0 0 44px;scroll-margin-top:20px}
+  h2{font-size:17px;margin:0 0 4px;font-weight:600;display:flex;align-items:center;gap:10px}
+  h2 .tag{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:20px;
+          border:1px solid var(--edge2);color:var(--dim);font-weight:400;letter-spacing:.06em}
+  section > .lead{color:var(--muted);margin:0 0 18px;max-width:72ch}
+
+  /* ---------- 电池卡 ---------- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+  .bat{
+    display:flex;gap:12px;padding:13px 14px;background:var(--card);
+    border:1px solid var(--edge);border-radius:12px;
+  }
+  .bat:hover{border-color:var(--edge2);background:var(--card2)}
+  .ico{flex:0 0 30px;width:30px;height:30px;border-radius:7px}
+  .bat .body{min-width:0}
+  .bat h4{margin:0;font-size:13.5px;font-weight:600;display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+  .nick{font-family:var(--mono);font-size:10.5px;color:var(--dim);font-weight:400}
+  .ports{
+    font-family:var(--mono);font-size:10.5px;color:var(--dim);
+    margin:3px 0 5px;word-break:break-word;line-height:1.5;
+  }
+  .ports .k{color:var(--muted)}
+  .bat p.desc{margin:0;font-size:12.5px;color:var(--muted);line-height:1.6}
+  .bat p.desc b{color:var(--ink);font-weight:600}
+
+  /* ---------- 快速开始 ---------- */
+  .flow{
+    background:var(--card);border:1px solid var(--edge);border-radius:12px;
+    padding:16px 18px;margin:0 0 12px;
+  }
+  .flow h3{margin:0 0 8px;font-size:13px;color:var(--ink);font-weight:600}
+  .chain{
+    font-family:var(--mono);font-size:11.5px;color:var(--muted);
+    white-space:pre-wrap;word-break:break-word;line-height:1.85;
+  }
+  .chain b{color:var(--pink);font-weight:500}
+  .chain i{color:var(--green);font-style:normal}
+  .note{font-size:12px;color:var(--dim);margin:8px 0 0}
+  .note b{color:var(--amber);font-weight:600}
+
+  /* ---------- 表格 ---------- */
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0 0}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--edge)}
+  th{color:var(--dim);font-weight:500;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em}
+  td{color:var(--muted)}
+  td code{font-family:var(--mono);color:var(--ink);font-size:11.5px}
+  tr:last-child td{border-bottom:none}
+
+  /* ---------- 链接 ---------- */
+  .links{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+  .links a{
+    display:block;padding:12px 14px;background:var(--card);border:1px solid var(--edge);
+    border-radius:10px;color:var(--ink);font-size:12.5px;
+  }
+  .links a:hover{border-color:var(--pink);text-decoration:none}
+  .links a span{display:block;color:var(--dim);font-family:var(--mono);font-size:10.5px;margin-top:3px}
+
+  .warn{
+    border-left:2px solid var(--amber);padding:8px 0 8px 14px;margin:14px 0;
+    color:var(--muted);font-size:12.5px;
+  }
+  .warn b{color:var(--amber)}
+
+  @media (max-width:900px){
+    .wrap{grid-template-columns:1fr}
+    nav{position:static;height:auto;border-right:none;border-bottom:1px solid var(--edge)}
+    nav .grp{margin-top:12px}
+    main{padding:24px 18px 60px}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-axis" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M6 18h12M6 18V6M6 18l5-5" stroke="#EDEBE4" stroke-width="1.1" opacity=".55" fill="none"/>
+      <circle cx="12.5" cy="12.5" r="3" fill="#FD7AB4"/>
+    </symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M5 18l4 2 4-8z" fill="#EDEBE4" opacity=".16" stroke="#EDEBE4" stroke-width="1" stroke-opacity=".5"/>
+      <path d="M10.5 14L16 5" stroke="#07A954" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M13 5h3v3" stroke="#07A954" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M5 5h14v14H5zM9.7 5v14M14.3 5v14M5 9.7h14M5 14.3h14"
+            stroke="#EDEBE4" stroke-width="1" opacity=".55" fill="none"/>
+      <rect x="9.7" y="5" width="4.6" height="4.7" fill="#FD7AB4" opacity=".5"/>
+    </symbol>
+    <symbol id="i-slider" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M6 7.5h12M6 12h12M6 16.5h12" stroke="#EDEBE4" stroke-width="1.2" opacity=".5"/>
+      <circle cx="15" cy="7.5" r="2.9" fill="#FD7AB4"/>
+      <circle cx="9" cy="12" r="2.8" fill="#07A954"/>
+      <circle cx="12.5" cy="16.5" r="2.7" fill="#EDEBE4"/>
+    </symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M4 12h16" stroke="#EDEBE4" stroke-width="1" opacity=".28"/>
+      <path d="M4 12c3-9 5-9 8 0s5 9 8 0" stroke="#FD7AB4" stroke-width="1.7" fill="none"/>
+    </symbol>
+    <symbol id="i-blend" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <circle cx="9.5" cy="12" r="5" fill="#FD7AB4" opacity=".45" stroke="#FD7AB4" stroke-width="1.1"/>
+      <circle cx="14.5" cy="12" r="5" fill="#07A954" opacity=".45" stroke="#07A954" stroke-width="1.1"/>
+    </symbol>
+    <symbol id="i-color" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <circle cx="9.5" cy="8.5" r="4" fill="#FD7AB4"/>
+      <circle cx="15" cy="13" r="3.6" fill="#07A954"/>
+      <circle cx="8" cy="15" r="3.2" fill="#EDEBE4" opacity=".85"/>
+    </symbol>
+    <symbol id="i-vec" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M7 17h11M7 17V6M7 17l8-7" stroke="#EDEBE4" stroke-width="1" opacity=".4" fill="none"/>
+      <path d="M7 17h11M7 17V6" stroke="#07A954" stroke-width="1.6" stroke-linecap="round"/>
+      <path d="M7 17l8-7" stroke="#07A954" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="6" cy="16" r="2.4" fill="#FD7AB4"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <circle cx="12" cy="12" r="7.4" fill="none" stroke="#EDEBE4" stroke-width="1.2" opacity=".65"/>
+      <path d="M12 12V7.6M12 12l3.4 2" stroke="#EDEBE4" stroke-width="1.3" stroke-linecap="round"/>
+      <circle cx="18.6" cy="5.4" r="2.6" fill="#FD7AB4"/>
+    </symbol>
+    <symbol id="i-canvas" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <rect x="3.4" y="5.6" width="17.2" height="12.8" fill="none" stroke="#EDEBE4" stroke-width="1.2" opacity=".8"/>
+      <path d="M3.4 5.6l8.2 12.8" stroke="#FD7AB4" stroke-width="1" opacity=".6"/>
+      <rect x="11" y="5.6" width="9.6" height="12.8" fill="#FD7AB4" opacity=".16"/>
+    </symbol>
+    <symbol id="i-brush" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M6 18c3-1 3-3 3-5l6-7" stroke="#EDEBE4" stroke-width="1.3" stroke-linecap="round" fill="none"/>
+      <circle cx="8.6" cy="15" r="3.2" fill="#FD7AB4" opacity=".85"/>
+      <path d="M15 4.6l3.4 3.4" stroke="#07A954" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-mark" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M4 17c4-8 7-8 11 0" stroke="#EDEBE4" stroke-width="1" opacity=".4" fill="none"/>
+      <g fill="#FD7AB4">
+        <circle cx="6" cy="14" r="1.4"/><circle cx="9.5" cy="10.4" r="1.7"/>
+        <circle cx="13" cy="10.2" r="1.9"/><circle cx="16.6" cy="13.6" r="1.5"/>
+      </g>
+    </symbol>
+    <symbol id="i-path" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M4.5 17C9 5 15 20 19.5 7" stroke="#EDEBE4" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      <circle cx="4.5" cy="17" r="1.6" fill="#07A954"/>
+      <circle cx="19.5" cy="7" r="1.6" fill="#FD7AB4"/>
+    </symbol>
+    <symbol id="i-image" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <rect x="4" y="5.5" width="16" height="13" rx="1" fill="none" stroke="#EDEBE4" stroke-width="1.1" opacity=".75"/>
+      <circle cx="9" cy="9.8" r="1.7" fill="#F0B429"/>
+      <path d="M4.6 16.5l4.6-5 4 3.6 3-2.6 3.2 4" stroke="#07A954" stroke-width="1.2" fill="none" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <circle cx="12" cy="12" r="6.6" fill="#FD7AB4" opacity=".18" stroke="#FD7AB4" stroke-width="1.2"/>
+      <path d="M3 4h18v16H3z" fill="none" stroke="#EDEBE4" stroke-width="1" opacity=".35" stroke-dasharray="3 3"/>
+      <circle cx="12" cy="12" r="2.2" fill="#EDEBE4" opacity=".35"/>
+    </symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M12 3.6l7.4 4.2v8.4L12 20.4 4.6 16.2V7.8z" fill="none" stroke="#EDEBE4" stroke-width="1.1" opacity=".8" stroke-linejoin="round"/>
+      <path d="M12 12l7.4-4.2M12 12v8.4M12 12L4.6 7.8" stroke="#07A954" stroke-width="1.1" opacity=".9"/>
+    </symbol>
+    <symbol id="i-layer" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M12 4.5l7 3.6-7 3.6-7-3.6z" fill="#FD7AB4" opacity=".35" stroke="#FD7AB4" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M5 12.2l7 3.6 7-3.6M5 16l7 3.6 7-3.6" stroke="#EDEBE4" stroke-width="1" opacity=".55" fill="none" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-node" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M8 8l8 4M16 12l-7.5 5" stroke="#EDEBE4" stroke-width="1.1" opacity=".7"/>
+      <circle cx="7" cy="7.5" r="2.8" fill="#FD7AB4"/>
+      <circle cx="16.5" cy="12" r="2.6" fill="#07A954"/>
+      <circle cx="7.5" cy="17" r="2.4" fill="#EDEBE4" opacity=".9"/>
+    </symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <circle cx="12" cy="12" r="8.4" fill="#FD7AB4" opacity=".16"/>
+      <circle cx="12" cy="12" r="5.2" fill="#FD7AB4" opacity=".34"/>
+      <circle cx="12" cy="12" r="2.5" fill="#EDEBE4"/>
+    </symbol>
+    <symbol id="i-calc" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <rect x="5" y="4.5" width="14" height="15" rx="2" fill="none" stroke="#EDEBE4" stroke-width="1.1" opacity=".7"/>
+      <path d="M8 8.5h8" stroke="#FD7AB4" stroke-width="1.3"/>
+      <g fill="#EDEBE4" opacity=".55">
+        <circle cx="8.5" cy="12.4" r=".9"/><circle cx="12" cy="12.4" r=".9"/><circle cx="15.5" cy="12.4" r=".9"/>
+        <circle cx="8.5" cy="15.6" r=".9"/><circle cx="12" cy="15.6" r=".9"/><circle cx="15.5" cy="15.6" r=".9"/>
+      </g>
+    </symbol>
+    <symbol id="i-text" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M6 7h12M12 7v11M9 18h6" stroke="#EDEBE4" stroke-width="1.6" stroke-linecap="round"/>
+      <circle cx="17.6" cy="6.4" r="1.8" fill="#FD7AB4"/>
+    </symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <rect x="3.6" y="7" width="12" height="10" rx="1.6" fill="none" stroke="#EDEBE4" stroke-width="1.1" opacity=".8"/>
+      <path d="M15.6 11l4.8-2.6v7.2L15.6 13z" fill="#07A954" opacity=".85"/>
+      <circle cx="9.6" cy="12" r="2.4" fill="#FD7AB4" opacity=".7"/>
+    </symbol>
+    <symbol id="i-out" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <rect x="3.6" y="5.4" width="16.8" height="13.2" rx="1.4" fill="none" stroke="#EDEBE4" stroke-width="1.2"/>
+      <path d="M7.4 15.6l3.4-4.6 2.6 2.8 2-2.2 2.6 4" stroke="#FD7AB4" stroke-width="1.4" fill="none" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-info" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M4 16.5h3v-5H4zM10 16.5h3V8h-3zM16 16.5h3V4.5h-3z" fill="#07A954" opacity=".85"/>
+    </symbol>
+    <symbol id="i-rand" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <g fill="#FD7AB4">
+        <rect x="5" y="5.5" width="3" height="3" rx=".6"/>
+        <rect x="13" y="7" width="2.4" height="2.4" rx=".5" opacity=".7"/>
+        <rect x="7.5" y="12" width="2.6" height="2.6" rx=".5" opacity=".85"/>
+        <rect x="14" y="14.5" width="3.2" height="3.2" rx=".6" opacity=".6"/>
+      </g>
+      <path d="M11 10.5l3 2" stroke="#EDEBE4" stroke-width="1" opacity=".35"/>
+    </symbol>
+    <symbol id="i-play" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M4 16h16" stroke="#EDEBE4" stroke-width="1" opacity=".35"/>
+      <path d="M8 8.5v9M16 6v11" stroke="#FD7AB4" stroke-width="2.2" stroke-linecap="round"/>
+      <circle cx="8" cy="8.5" r="1.8" fill="#07A954"/><circle cx="16" cy="6" r="1.8" fill="#07A954"/>
+    </symbol>
+    <symbol id="i-state" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <rect x="5" y="6" width="14" height="12" rx="2" fill="none" stroke="#EDEBE4" stroke-width="1.1" opacity=".7"/>
+      <path d="M8 13l2.4 2.4L16 9.6" stroke="#07A954" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-event" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <path d="M13 3.5L6.5 13h4.4l-.9 7.5L17 11h-4.4z" fill="#F0B429" opacity=".9"/>
+      <circle cx="18.4" cy="18.4" r="2.4" fill="#FD7AB4"/>
+    </symbol>
+    <symbol id="i-entity" viewBox="0 0 24 24">
+      <rect width="24" height="24" rx="5" fill="#17171E"/>
+      <circle cx="12" cy="7.4" r="2.8" fill="#FD7AB4"/>
+      <path d="M6.6 19.5c0-3.4 2.4-5.6 5.4-5.6s5.4 2.2 5.4 5.6" fill="none" stroke="#EDEBE4" stroke-width="1.4" opacity=".8" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+<nav>
+  <div class="brand">Colugo</div>
+  <div class="ver">0.39.0 · 61 电池</div>
+
+  <div class="grp">开始</div>
+  <a href="#quick">三条最小链路</a>
+  <a href="#recipe">接线配方</a>
+
+  <div class="grp">Shader</div>
+  <a href="#shader">几何输入</a>
+  <a href="#shader">参数与运算</a>
+  <a href="#shader">材质挂载</a>
+
+  <div class="grp">三维</div>
+  <a href="#three">几何 · 相机 · 场景</a>
+  <a href="#three">后处理</a>
+
+  <div class="grp">二维</div>
+  <a href="#two">画布与输出</a>
+  <a href="#two">绘制与样式</a>
+  <a href="#mark">笔触系统</a>
+  <a href="#media">文字 · 图片 · 裁剪</a>
+
+  <div class="grp">动态</div>
+  <a href="#entity">对象与动画</a>
+  <a href="#logic">运行时表达式</a>
+  <a href="#logic">事件与交互</a>
+  <a href="#behavior">状态与行为</a>
+
+  <div class="grp">资源</div>
+  <a href="#signal">随机与信号</a>
+  <a href="#links">文档与链接</a>
+</nav>
+
+<main>
+<header>
+  <h1>电池说明</h1>
+  <p class="sub">Grasshopper 定义结构，浏览器执行画面。这份文档是当前 0.39.0 的全部 61 只电池。</p>
+
+  <div class="stat">
+    <div>版本<b>0.39.0</b></div>
+    <div>电池<b>61</b></div>
+    <div>数据类型<b>15</b></div>
+    <div>断言<b>201</b></div>
+    <div>分类<b>11</b></div>
+  </div>
+</header>
+
+<!-- ============ 快速开始 ============ -->
+<section id="quick">
+  <h2>三条最小链路 <span class="tag">START HERE</span></h2>
+  <p class="lead">第一次打开先跑这三条。每条都能在一分钟内看到画面，跑通再往下看。</p>
+
+  <div class="flow">
+    <h3>① 静态二维</h3>
+    <div class="chain"><b>Curve</b> → <i>Path Input</i> → <i>Draw Path</i> → <i>Render Output</i>.Cmds
+<i>Canvas</i> → <i>Render Output</i>.Canvas　　<i>Render Output</i>.Preview = ✓</div>
+    <p class="note"><b>失败点：</b>Render Output 的 <code>Canvas</code> 空着就什么都不出。它决定画布尺寸，不是可选项。</p>
+  </div>
+
+  <div class="flow">
+    <h3>② 三维 + GPU 位移</h3>
+    <div class="chain"><b>Surface / Mesh</b> → <i>Mesh Input</i> → <i>Draw 3D</i>(Mode=5) → <i>Apply Material</i> → <i>Scene 3D</i> → <i>Render Output</i>.Scene
+                                    ↑ Displace
+<i>Shader Normal</i> → <i>Shader Math</i>(Op=3 mul) ← <i>Shader Math</i>(Op=6 sin) ← <i>Shader Time</i></div>
+    <p class="note"><b>失败点：</b>位移幅度按 Rhino 世界单位算。网格 100 宽时乘 20 才看得出呼吸；乘 1 几乎不可见。相机按<b>原始包围盒</b>取景，位移太大就出框。</p>
+  </div>
+
+  <div class="flow">
+    <h3>③ 二维线稿贴到三维</h3>
+    <div class="chain"><b>2D 图层</b> → <i>Draw Path</i> ─┐
+<i>Shader Canvas</i>(Space=2 Screen) → <i>Apply Material</i>.Colour → <i>Scene 3D</i>(Transparent ✓) → <i>Post FX</i> → <i>Render Output</i></div>
+    <p class="note"><b>失败点：</b>Screen 模式按屏幕坐标采样，二维内容要画在立方体所在的<b>屏幕中央区域</b>才看得见。画在角落会贴出一片纯色——那是"采样到空白"，不是纹理坏了。</p>
+  </div>
+</section>
+
+<!-- ============ 配方 ============ -->
+<section id="recipe">
+  <h2>接线配方：三个作品骨架 <span class="tag">RECIPES</span></h2>
+  <p class="lead">不是罗列端口，是能直接照搭的结构。每条的参数都是实测过的起点值。</p>
+
+  <div class="flow">
+    <h3>GPU 呼吸雕塑</h3>
+    <div class="chain"><i>Mesh Input</i> → <i>Draw 3D</i>(Mode=5, Glow=0.6) → <i>Apply Material</i> → <i>Scene 3D</i>(Transparent ✓) → <i>Post FX</i>(Bloom=0.9) → <i>Render Output</i>
+
+Colour ← <i>Shader Mix</i>(A=深蓝, B=橙, Factor=条纹)
+Displace ← <i>Shader Math</i>(Op=3) ← A: <i>Shader Normal</i> ／ B: <i>Shader Math</i>(Op=3, B=18) ← <i>Shader Math</i>(Op=6 sin) ← <i>Shader Time</i>(Scale=0.6)</div>
+    <table>
+      <tr><th>参数</th><th>起点值</th><th>作用</th></tr>
+      <tr><td><code>Draw 3D · Mode</code></td><td>5 (unlit)</td><td>忽略光照，颜色/位移最干净</td></tr>
+      <tr><td><code>sin 的振幅</code></td><td>18</td><td>太小看不出呼吸，太大出框</td></tr>
+      <tr><td><code>Shader Time · Scale</code></td><td>0.6</td><td>1 = 真实秒速，0.6 更缓</td></tr>
+      <tr><td><code>Post FX · Threshold</code></td><td>0.45</td><td>亮部才开始发光；画面本就亮就往上推</td></tr>
+    </table>
+  </div>
+
+  <div class="flow">
+    <h3>参数化条纹墙</h3>
+    <div class="chain"><i>Shader Position</i> → <i>Shader Swizzle</i>(Channel=1 x) → <i>Shader Math</i>(Op=3, B=0.12) → <i>Shader Math</i>(Op=1 add) ← <i>Shader Time</i>
+ → <i>Shader Math</i>(Op=6 sin) → <i>Shader Math</i>(Op=14 remap, B=-1, C=1, D=1) → <i>Shader Mix</i>.Factor
+<i>Shader Color</i>(深蓝) → Mix.A　　<i>Shader Color</i>(橙) → Mix.B　　Mix → <i>Apply Material</i>.Colour</div>
+    <p class="note"><b>remap 的四个输入：</b>A=输入，B=in0，C=in1，D=out1，<b>out0 固定 0</b>。所以 sin 的 −1…1 变 0…1 要 B=−1, C=1, D=1。</p>
+  </div>
+
+  <div class="flow">
+    <h3>线稿投影体</h3>
+    <div class="chain"><i>Draw Path</i>(二维线稿) → 二维层
+<i>Shader Canvas</i>(Space=2) → <i>Apply Material</i>.Colour → <i>Draw 3D</i>.Cmds
+<i>Scene 3D</i>(Transparent ✓, Background 随便设) → <i>Render Output</i>
+可选：同时把 <i>Post FX</i>(Bloom=0.6) 串在 Scene 3D 之后</div>
+    <p class="note"><b>为什么会透出：</b>Transparent 打开后三维不清背景，二维层从后面透出来。三处联动（canvas alpha / clearAlpha / 后处理 alpha）缺一个就不透。</p>
+  </div>
+</section>
+
+<!-- ============ Shader ============ -->
+<section id="shader">
+  <h2>Shader <span class="tag">11 只</span></h2>
+  <p class="lead">一类新的值：<b>ShaderExpr</b>。它不是数字，是"一段将在 GPU 上求值的节点图"。每只电池产出一小段，连接时自动合并。端口可以直接接数字，会变成常量。</p>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-axis"/></svg><div class="body">
+      <h4>Shader Position <span class="nick">SPos</span></h4>
+      <div class="ports"><span class="k">in</span> Space(1 local · 2 world) ／ <span class="k">out</span> Shader</div>
+      <p class="desc">顶点位置，vec3。取分量要接 <b>Shader Swizzle</b>。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-arrow"/></svg><div class="body">
+      <h4>Shader Normal <span class="nick">SNrm</span></h4>
+      <div class="ports"><span class="k">in</span> Space ／ <span class="k">out</span> Shader</div>
+      <p class="desc">表面法线，vec3。做"沿法线膨胀"就靠它。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-grid"/></svg><div class="body">
+      <h4>Shader UV <span class="nick">SUV</span></h4>
+      <div class="ports"><span class="k">out</span> Shader</div>
+      <p class="desc">纹理坐标，vec2。首版只 UV0；网格没有 UV 属性时是常量。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-slider"/></svg><div class="body">
+      <h4>Shader Uniform <span class="nick">SUni</span></h4>
+      <div class="ports"><span class="k">in</span> Name, Value ／ <span class="k">out</span> Shader</div>
+      <p class="desc">命名浮点参数。<b>改值不重建材质、不重编译</b>——只发一条 151 字节的增量。首版只 float。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-calc"/></svg><div class="body">
+      <h4>Shader Math <span class="nick">SM</span></h4>
+      <div class="ports"><span class="k">in</span> Op, A, B, C, D ／ <span class="k">out</span> Shader</div>
+      <p class="desc">20 个算子一只电池。常用：<b>3 mul · 6 sin · 14 remap · 16 clamp · 17 step</b>。输出类型跟 A 走。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-blend"/></svg><div class="body">
+      <h4>Shader Mix <span class="nick">SMix</span></h4>
+      <div class="ports"><span class="k">in</span> A, B, Factor ／ <span class="k">out</span> Shader</div>
+      <p class="desc">线性插值。A/B 通常是颜色，Factor 是 float 图。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-color"/></svg><div class="body">
+      <h4>Shader Color <span class="nick">SCol</span></h4>
+      <div class="ports"><span class="k">in</span> Mode(1 RGB · 2 HSL), R/H, G/S, B/L ／ <span class="k">out</span> Shader</div>
+      <p class="desc">颜色常量。HSL 在 GH 侧就算成 RGB，运行时只认 vec3。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-axis"/></svg><div class="body">
+      <h4>Shader Swizzle <span class="nick">SSwz</span></h4>
+      <div class="ports"><span class="k">in</span> A, Channel(1 x · 2 y · 3 z) ／ <span class="k">out</span> Shader</div>
+      <p class="desc">从 vec3 里取一个分量出来。没有它，Position 拿到手也用不了。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-clock"/></svg><div class="body">
+      <h4>Shader Time <span class="nick">STime</span></h4>
+      <div class="ports"><span class="k">in</span> Scale, Offset ／ <span class="k">out</span> Shader</div>
+      <p class="desc">作品时钟，每帧更新。<b>不能用 Runtime Time 代替</b>——那是 JS 层表达式，与 GPU 层不是一个类型。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-vec"/></svg><div class="body">
+      <h4>Shader Vector <span class="nick">SVec</span></h4>
+      <div class="ports"><span class="k">in</span> X, Y, Z ／ <span class="k">out</span> Shader</div>
+      <p class="desc">三个标量拼成 vec3，缺省补 0。构造方向、位移向量用。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-canvas"/></svg><div class="body">
+      <h4>Shader Canvas <span class="nick">SCan</span></h4>
+      <div class="ports"><span class="k">in</span> Space(1 UV · 2 Screen) ／ <span class="k">out</span> Shader</div>
+      <p class="desc">把二维画布当纹理。<b>默认 Screen</b>：多数网格没有 UV，UV 模式会贴成一片纯色。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-brush"/></svg><div class="body">
+      <h4>Apply Material <span class="nick">ApplyMat</span></h4>
+      <div class="ports"><span class="k">in</span> Commands, Colour, Displace ／ <span class="k">out</span> Commands</div>
+      <p class="desc">把图挂到三维命令上。Colour 要 vec3，Displace 是<b>局部空间偏移</b>（不是绝对位置）。两个都不接就原样透传。</p>
+    </div></div>
+  </div>
+
+  <div class="warn">
+    <b>两个颜色槽都要 v3。</b>接错类型不会崩，但画面会是一片纯色——比报错更难查。Apply Material 会在电池上明确报"输出是 f，颜色槽要 v3"。
+  </div>
+</section>
+
+<!-- ============ 三维 ============ -->
+<section id="three">
+  <h2>三维 <span class="tag">7 只</span></h2>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-cube"/></svg><div class="body">
+      <h4>Mesh Input <span class="nick">MeshIn</span></h4>
+      <div class="ports"><span class="k">in</span> Geometry, Density ／ <span class="k">out</span> Meshes, Info</div>
+      <p class="desc">Rhino 几何 → 三角网格，世界坐标。Brep 用默认网格参数。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-axis"/></svg><div class="body">
+      <h4>Transform 3D <span class="nick">Xform3D</span></h4>
+      <div class="ports"><span class="k">in</span> Meshes, Xform(3) ／ <span class="k">out</span> Meshes</div>
+      <p class="desc">在三维链路里做变换。动画时长可参数化。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-cube"/></svg><div class="body">
+      <h4>Draw 3D <span class="nick">Draw3D</span></h4>
+      <div class="ports"><span class="k">in</span> Meshes, Mode, Colour, Size, Glow, Opacity ／ <span class="k">out</span> Commands</div>
+      <p class="desc">Mode：<b>1 solid · 2 wireframe · 3 points · 4 normals · 5 unlit</b>。1 和 5 吃颜色，4 忽略颜色。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-camera"/></svg><div class="body">
+      <h4>Camera 3D <span class="nick">Cam3D</span></h4>
+      <div class="ports"><span class="k">in</span> 5 ／ <span class="k">out</span> Camera</div>
+      <p class="desc">显式相机。留空则自动取景（按原始包围盒）。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-layer"/></svg><div class="body">
+      <h4>Scene 3D <span class="nick">Scene3D</span></h4>
+      <div class="ports"><span class="k">in</span> Commands, Camera, Background, Lights, Transparent ／ <span class="k">out</span> Scene</div>
+      <p class="desc">收集命令与相机。<b>Transparent ✓</b> 时清空背景，二维层从后面透出来（合成用）。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-spark"/></svg><div class="body">
+      <h4>Post FX <span class="nick">FX</span></h4>
+      <div class="ports"><span class="k">in</span> Scene, Bloom, Threshold, Radius ／ <span class="k">out</span> Scene</div>
+      <p class="desc">Bloom 辉光。<b>Bloom=0 关闭</b>（0.5–1.5 可用）；Threshold 是发光门槛，画面亮就往上推；Radius 是弥散范围。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-cube"/></svg><div class="body">
+      <h4>Point 3D / Curve 3D <span class="nick">Pt3D · Crv3D</span></h4>
+      <div class="ports"><span class="k">in</span> 1 / 2 ／ <span class="k">out</span> 单值</div>
+      <p class="desc">点与曲线的三维输入，用于点云线框一类的构造。</p>
+    </div></div>
+  </div>
+
+  <div class="warn">
+    <b>3D 的点大小与线宽调不了。</b>WGSL 的 point-list / line-list 固定 1 像素，`Size` 参数无效。
+    要粗细请用几何代替：曲线 Pipe 成圆柱、点 Sphere 成小球，就变成 mesh，粗细完全可控。
+  </div>
+</section>
+
+<!-- ============ 二维 ============ -->
+<section id="two">
+  <h2>二维：画布与输出 <span class="tag">14 只</span></h2>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-canvas"/></svg><div class="body">
+      <h4>Canvas</h4>
+      <div class="ports"><span class="k">in</span> 4（尺寸 / 背景 / 边距…） ／ <span class="k">out</span> Canvas</div>
+      <p class="desc">画布定义。Render Output 必须接它，否则没有尺寸。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-out"/></svg><div class="body">
+      <h4>Render Output <span class="nick">Render</span></h4>
+      <div class="ports"><span class="k">in</span> Canvas, Commands, Entities, Enabled, Preview, Scene ／ <span class="k">out</span> Status, Url</div>
+      <p class="desc">唯一的出口。<b>Preview ✓</b> 弹内嵌窗口；<b>Url</b> 可以在外部浏览器打开。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-path"/></svg><div class="body">
+      <h4>Path Input <span class="nick">PathIn</span></h4>
+      <div class="ports"><span class="k">in</span> Curve, Page W, Page H, Margin ／ <span class="k">out</span> Paths, Info</div>
+      <p class="desc">Rhino 曲线 → 页面坐标路径。相机在这里<b>一次框定</b>，不随几何旋转重算。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-path"/></svg><div class="body">
+      <h4>Draw Path <span class="nick">DrawPath</span></h4>
+      <div class="ports"><span class="k">in</span> 10（路径 / 图层 / 顺序 / 描边 / 填充…） ／ <span class="k">out</span> Commands</div>
+      <p class="desc">核心绘制。10 个输入是有意为之，不要拆。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-play"/></svg><div class="body">
+      <h4>Draw Progress <span class="nick">Progress</span></h4>
+      <div class="ports"><span class="k">in</span> 3 ／ <span class="k">out</span> Commands</div>
+      <p class="desc">按进度逐笔生长，做"画出来"的过程。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-mark"/></svg><div class="body">
+      <h4>Draw Points <span class="nick">DrawPts</span></h4>
+      <div class="ports"><span class="k">in</span> 4 ／ <span class="k">out</span> Commands</div>
+      <p class="desc">二维点阵。这里的点<b>可以调大小</b>（Canvas 2D 没有 WebGPU 那条限制）。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-brush"/></svg><div class="body">
+      <h4>Stroke Style / Fill Style <span class="nick">Stroke · Fill</span></h4>
+      <div class="ports"><span class="k">in</span> 6 / 4 ／ <span class="k">out</span> 样式</div>
+      <p class="desc">描边与填充。二维线宽是真实像素宽度。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-layer"/></svg><div class="body">
+      <h4>Layer <span class="nick">Layer</span></h4>
+      <div class="ports"><span class="k">in</span> 6 ／ <span class="k">out</span> Layer</div>
+      <p class="desc">图层与合成模式（blend 真实合成）。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-out"/></svg><div class="body">
+      <h4>Project to 2D <span class="nick">Proj2D</span></h4>
+      <div class="ports"><span class="k">in</span> 6 ／ <span class="k">out</span> Paths, Info</div>
+      <p class="desc">把三维几何投影到页面坐标。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-info"/></svg><div class="body">
+      <h4>Runtime Info <span class="nick">Info</span></h4>
+      <div class="ports"><span class="k">out</span> 6（帧率 / 对象数 / 耗时…）</div>
+      <p class="desc">自检面板。调参数时先看它，别看画面猜。</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ 笔触 ============ -->
+<section id="mark">
+  <h2>笔触系统 <span class="tag">3 只</span></h2>
+  <p class="lead">笔触是"沿路径盖印章"。它比普通描边多了每笔的尺寸/角度/颜色，是二维层表达力最强的一组。</p>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-brush"/></svg><div class="body">
+      <h4>Brush <span class="nick">Brush</span></h4>
+      <div class="ports"><span class="k">in</span> 5 ／ <span class="k">out</span> Brush, Info</div>
+      <p class="desc">印章的定义：形状、尺寸、软硬。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-mark"/></svg><div class="body">
+      <h4>Mark Along Path <span class="nick">Marks</span></h4>
+      <div class="ports"><span class="k">in</span> 6 ／ <span class="k">out</span> Commands, Info</div>
+      <p class="desc">沿路径按间距盖印章。输出直接是 DrawCommand，可接 Clip / Render Output。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-color"/></svg><div class="body">
+      <h4>Style Map <span class="nick">StyleMap</span></h4>
+      <div class="ports"><span class="k">in</span> 5 ／ <span class="k">out</span> Style, Info</div>
+      <p class="desc">把 0–1 的值映射到尺寸/不透明度/颜色，让每笔不一样。</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ 文字图片 ============ -->
+<section id="media">
+  <h2>文字 · 图片 · 裁剪 <span class="tag">4 只</span></h2>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-text"/></svg><div class="body">
+      <h4>Text <span class="nick">Text</span></h4>
+      <div class="ports"><span class="k">in</span> Text, Font, Size, Bold, Italic, Tolerance ／ <span class="k">out</span> Curves, Info</div>
+      <p class="desc">文字<b>转成曲线</b>，运行时零字体依赖。改字号 = 重新求解。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-image"/></svg><div class="body">
+      <h4>Image <span class="nick">Image</span></h4>
+      <div class="ports"><span class="k">in</span> File, Max Size ／ <span class="k">out</span> Image, Info</div>
+      <p class="desc">读图 → 等比降采样 → data URL。<b>同路径+同尺寸只读一次盘</b>。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-image"/></svg><div class="body">
+      <h4>Draw Image <span class="nick">DrawImg</span></h4>
+      <div class="ports"><span class="k">in</span> Image, Layer, Order, X, Y, Opacity ／ <span class="k">out</span> Commands</div>
+      <p class="desc">只负责放哪、多透明；缩放归变换。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-clip"/></svg><div class="body">
+      <h4>Clip <span class="nick">Clip</span></h4>
+      <div class="ports"><span class="k">in</span> Commands, Clip Path, Mode(1 内 · 2 外) ／ <span class="k">out</span> Commands</div>
+      <p class="desc">指令级裁剪。模具用<b>页面坐标</b>，在指令变换<b>之前</b>落剪。一个指令只能有一个 clip。</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ 对象动画 ============ -->
+<section id="entity">
+  <h2>对象与动画 <span class="tag">6 只</span></h2>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-entity"/></svg><div class="body">
+      <h4>Entity Blueprint <span class="nick">Blueprint</span></h4>
+      <div class="ports"><span class="k">in</span> 5 ／ <span class="k">out</span> Blueprint</div>
+      <p class="desc">动态对象的分布与运动定义。确定性分布，不掷骰子。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-entity"/></svg><div class="body">
+      <h4>Entity Look <span class="nick">Look</span></h4>
+      <div class="ports"><span class="k">in</span> 8 ／ <span class="k">out</span> Entities</div>
+      <p class="desc">外观：尺寸、颜色、拖尾、淡出。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-clock"/></svg><div class="body">
+      <h4>Timeline <span class="nick">Timeline</span></h4>
+      <div class="ports"><span class="k">in</span> 3 ／ <span class="k">out</span> Timeline</div>
+      <p class="desc">全局时间轴：播放 / 暂停 / 循环。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-play"/></svg><div class="body">
+      <h4>Track <span class="nick">Track</span></h4>
+      <div class="ports"><span class="k">in</span> 6 ／ <span class="k">out</span> Track</div>
+      <p class="desc">把任意参数绑到时间轴上，带缓动。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-axis"/></svg><div class="body">
+      <h4>Transform <span class="nick">Xform</span></h4>
+      <div class="ports"><span class="k">in</span> 2 ／ <span class="k">out</span> Command</div>
+      <p class="desc">二维变换。世界里的旋转会做一次相机共轭（已数值验证）。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-blend"/></svg><div class="body">
+      <h4>Morph <span class="nick">Morph</span></h4>
+      <div class="ports"><span class="k">in</span> 2 ／ <span class="k">out</span> Commands</div>
+      <p class="desc">两条路径之间插值。点序要一致，否则会拧。</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ 逻辑 ============ -->
+<section id="logic">
+  <h2>运行时表达式 <span class="tag">8 只</span></h2>
+  <p class="lead">这一组在<b>浏览器里每帧求值</b>，不触发 GH 求解。和 Shader 是两层：这层在 JS，Shader 在 GPU。</p>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-slider"/></svg><div class="body">
+      <h4>Runtime Var <span class="nick">Var</span></h4>
+      <div class="ports"><span class="k">in</span> Name, Initial ／ <span class="k">out</span> Expr</div>
+      <p class="desc">运行时变量。事件可以改它，表达式读它。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-clock"/></svg><div class="body">
+      <h4>Runtime Time <span class="nick">Time</span></h4>
+      <div class="ports"><span class="k">in</span> Scale, Offset ／ <span class="k">out</span> Expr</div>
+      <p class="desc">浏览器时钟（JS 层）。<b>不能接 ShaderExpr</b>——类型不同，要 Shader 层的时间用 Shader Time。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-clock"/></svg><div class="body">
+      <h4>Runtime DT <span class="nick">DT</span></h4>
+      <div class="ports"><span class="k">out</span> Expr</div>
+      <p class="desc">帧步长的唯一来源。别手填 1/60——步长一改，所有作品速度静默翻倍。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-calc"/></svg><div class="body">
+      <h4>Runtime Math <span class="nick">Math</span></h4>
+      <div class="ports"><span class="k">in</span> Op, A, B ／ <span class="k">out</span> Expr</div>
+      <p class="desc">含 gt / lt / select / noise / remap 等算子。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-calc"/></svg><div class="body">
+      <h4>Runtime Remap / Select <span class="nick">Remap · Select</span></h4>
+      <div class="ports"><span class="k">in</span> 3 ／ <span class="k">out</span> Expr</div>
+      <p class="desc">区间映射与二选一。Select 就是条件分支。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-node"/></svg><div class="body">
+      <h4>Bind <span class="nick">Bind</span></h4>
+      <div class="ports"><span class="k">in</span> Command, Property, Expr ／ <span class="k">out</span> Command</div>
+      <p class="desc">把表达式绑到指令属性上。<b>改值不重发整个定义</b>。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-event"/></svg><div class="body">
+      <h4>Event Rule <span class="nick">Rule</span></h4>
+      <div class="ports"><span class="k">in</span> 6 ／ <span class="k">out</span> Rules</div>
+      <p class="desc">事件 → 写变量（set / toggle / add）。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-event"/></svg><div class="body">
+      <h4>Interaction / Event Trigger <span class="nick">Interaction · Trigger</span></h4>
+      <div class="ports"><span class="k">in</span> 0 / 5 ／ <span class="k">out</span> Pointer 等 5 / Events</div>
+      <p class="desc">指针坐标是<b>画布坐标</b>（左上原点、Y 向下），不是 Rhino 世界坐标。</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ 行为 ============ -->
+<section id="behavior">
+  <h2>状态与行为 <span class="tag">4 只</span></h2>
+  <p class="lead">让对象自己读写状态、繁殖、销毁。程序在 GH 侧编译一次，运行时按帧推进。</p>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-state"/></svg><div class="body">
+      <h4>Read State <span class="nick">ReadSt</span></h4>
+      <div class="ports"><span class="k">in</span> 2 ／ <span class="k">out</span> 2</div>
+      <p class="desc">读对象自己的状态（位置 / 年龄 / 代数 / 序号）。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-state"/></svg><div class="body">
+      <h4>Write State <span class="nick">WriteSt</span></h4>
+      <div class="ports"><span class="k">in</span> 5 ／ <span class="k">out</span> 2</div>
+      <p class="desc"><b>写谁谁归你</b>：写了 x/y 就不再沿曲线跑。这是自定义行为的开关。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-entity"/></svg><div class="body">
+      <h4>Spawn <span class="nick">Spawn</span></h4>
+      <div class="ports"><span class="k">in</span> 6 ／ <span class="k">out</span> 2</div>
+      <p class="desc">繁殖子代。<b>上升沿触发</b>，不是每帧——否则一秒就爆到上限。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-entity"/></svg><div class="body">
+      <h4>Destroy <span class="nick">Destroy</span></h4>
+      <div class="ports"><span class="k">in</span> 3 ／ <span class="k">out</span> 2</div>
+      <p class="desc">到龄销毁，可留残影。残影是运行时状态，不进 patch。</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ 随机 ============ -->
+<section id="signal">
+  <h2>随机与信号 <span class="tag">5 只</span></h2>
+
+  <div class="grid">
+    <div class="bat"><svg class="ico"><use href="#i-rand"/></svg><div class="body">
+      <h4>Random <span class="nick">Rand</span></h4>
+      <div class="ports"><span class="k">out</span> 2</div>
+      <p class="desc">确定性随机。同种子同结果，可复现。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-wave"/></svg><div class="body">
+      <h4>Noise 1D / 2D / 3D <span class="nick">Noise</span></h4>
+      <div class="ports"><span class="k">in</span> 1 / 2 / 3 ／ <span class="k">out</span> 2</div>
+      <p class="desc">Perlin 噪声。连续、可导，做流体感与有机分布。</p>
+    </div></div>
+
+    <div class="bat"><svg class="ico"><use href="#i-wave"/></svg><div class="body">
+      <h4>Signal to Float <span class="nick">Sig2F</span></h4>
+      <div class="ports"><span class="k">in</span> 1 ／ <span class="k">out</span> 1</div>
+      <p class="desc">音频信号 → 数值。</p>
+    </div></div>
+  </div>
+</section>
+
+<!-- ============ 链接 ============ -->
+<section id="links">
+  <h2>文档与链接 <span class="tag">REFERENCE</span></h2>
+  <p class="lead">仓库里的深度文档。搭不出来的时候按这个顺序查。</p>
+
+  <div class="links">
+    <a href="../../HANDOFF.md">HANDOFF · 迁移与续作
+      <span>目录结构 / 构建 / 验证 / 已知边界与踩过的坑</span></a>
+    <a href="../protocol-v0.1.md">协议 V0.1
+      <span>op 列表、坐标语义、动画、状态回传</span></a>
+    <a href="../motion-model.md">运动模型
+      <span>cmds 是什么、几何与变换的关系、非仿射运动怎么表达</span></a>
+    <a href="../minimal-paths.md">最小连接路径
+      <span>静态 / 动态 / 动画 / 平面四条最短链</span></a>
+    <a href="../tsl-plan-calibration.md">TSL 任务书校准
+      <span>为什么 S1 比原估便宜、9 只电池怎么来的</span></a>
+    <a href="../stage-plan.md">阶段 0–7 状态
+      <span>哪些做了、哪些没做</span></a>
+    <a href="../../gh/build.md">构建记录
+      <span>每一版改了什么、踩了什么坑</span></a>
+    <a href="../progress-report.md">进度报告
+      <span>能力矩阵与规模统计</span></a>
+  </div>
+
+  <div class="warn" style="margin-top:24px">
+    <b>写文档的一条原则：</b>这里只写"当前真实支持"的东西。已发现但未修的限制会明确标出来（比如 3D 点线尺寸），
+    不写成"应该可以"。看到描述和实际不符，以 <code>runtime/src/</code> 的代码为准。
+  </div>
+</section>
+
+<footer style="margin-top:60px;padding-top:20px;border-top:1px solid var(--edge);color:var(--dim);font-size:11.5px;font-family:var(--mono)">
+  Colugo 0.39.0 · Grasshopper Creative Coding Engine · mcodo design · 2026-10-26
+</footer>
+</main>
+</div>
+</body>
+</html>
