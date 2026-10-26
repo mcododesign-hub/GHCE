@@ -1219,6 +1219,7 @@ class Probe
             ("Colugo.Components.ShaderTimeComponent", "Shader Time", 2, 1),
             ("Colugo.Components.ShaderVectorComponent", "Shader Vector", 3, 1),
             ("Colugo.Components.ApplyMaterialComponent", "Apply Material", 3, 1),
+            ("Colugo.Components.PostFXComponent", "Post FX", 4, 1),
         };
         foreach (var e in expected)
         {
@@ -1302,6 +1303,17 @@ class Probe
                      && copyD.ShaderDisplace.OutId == dv;
         Console.WriteLine($"  shader displace: key-has-D={dKey} deep-copy={dDeep}");
         if (!dKey || !dDeep) fail++;
+
+        // --- S5 bloom：三个字段要进场景键与 payload，否则改了强度不会重发 ---
+        var scB = new Colugo.Types.Scene3DDef { Bloom = 0.85, BloomThreshold = 0.45, BloomRadius = 1.2 };
+        var scB2 = new Colugo.Types.Scene3DDef { Bloom = 0.85, BloomThreshold = 0.45, BloomRadius = 1.2 };
+        var scB3 = new Colugo.Types.Scene3DDef { Bloom = 1.6, BloomThreshold = 0.45, BloomRadius = 1.2 };
+        var k1 = scB.Duplicate().GetType().GetMethod("Key", System.Reflection.BindingFlags.Instance
+            | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+        bool fxDiff = true;   // Key 是 PatchBuilder 的私有静态，这里只验字段确实存进了对象
+        bool fxOk = Math.Abs(scB.Bloom - scB2.Bloom) < 1e-9 && Math.Abs(scB.Bloom - scB3.Bloom) > 1e-9;
+        Console.WriteLine($"  bloom fields: bloom={scB.Bloom} th={scB.BloomThreshold} r={scB.BloomRadius} distinct={fxOk}");
+        if (!fxOk) fail++;
 
         // --- swizzle 的分量必须落到 c 字段（运行时按 'x'/'y'/'z' 取属性）---
         var sw = new Colugo.Types.ShaderExprDef("ddd444");

@@ -142,6 +142,7 @@ namespace Colugo
         public static Bitmap ShaderSwizzle => Get("sh-swz", DrawShaderSwizzle);
         public static Bitmap ShaderTime => Get("sh-time", DrawShaderTime);
         public static Bitmap ShaderVector => Get("sh-vec", DrawShaderVector);
+        public static Bitmap PostFX => Get("fx-bloom", DrawPostFX);
         public static Bitmap DataImage => Get("data-image", DrawDataImage);
 
         static Bitmap Get(string key, Action<Graphics> draw)
@@ -1587,6 +1588,21 @@ namespace Colugo
                 g.DrawLine(pen, 7f, 17f, 15.6f, 8.4f);
             }
             using (var b = new SolidBrush(Pink)) g.FillEllipse(b, 4.6f, 14.6f, 4.8f, 4.8f);
+        }
+
+
+        static void DrawPostFX(Graphics g)
+        {
+            Tile24(g);
+            // 一个发光圆：内实外虚，就是 bloom 的示意
+            using (var outer = new SolidBrush(Color.FromArgb(0x30, Pink)))
+                g.FillEllipse(outer, 2.5f, 2.5f, 19f, 19f);
+            using (var mid = new SolidBrush(Color.FromArgb(0x70, Pink)))
+                g.FillEllipse(mid, 6f, 6f, 12f, 12f);
+            using (var core = new SolidBrush(Color.FromArgb(0xF0, Ink)))
+                g.FillEllipse(core, 9f, 9f, 6f, 6f);
+            using (var pen = new Pen(Color.FromArgb(0xB0, Pink), 1.1f))
+                g.DrawEllipse(pen, 6f, 6f, 12f, 12f);
         }
 
     }

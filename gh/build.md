@@ -1701,3 +1701,43 @@ diff 逻辑：完整键相同 → 跳过；结构键相同 → 只发 `shader.un
 
 **当前可用的替代**：2D 的 `Mark` / `Draw Path` 有真实的线宽（Canvas 2D 没这个限制），
 所以"要粗细"的需求在二维那一层是满足的；三维的点和线暂时只能 1px。
+
+### 0.37.0 S5：Bloom 后处理
+
+新电池 `Post FX`：`Scene` + `Bloom` + `Threshold` + `Radius` → `Scene`。
+做成独立电池而不是给 `Scene 3D` 加三个端口 —— 旧定义一个字不用改，4 个输入也不用变 7 个。
+
+**为什么不是用 three 的 BloomNode**：`bloom` 在核心包里是 **0 处**。three 把它放在
+`addons/tsl/display/BloomNode.js`，而 `vendor/` 里只有 `three.core / three.webgpu / three.tsl`。
+
+**自己写的 bloom 用的是「亮度加权模糊」**，一条节点图搞定，不需要多级 RT 链：
+
+```text
+scenePass → tex
+  ↓
+for 13 taps: sample(uv + offset) × smoothstep(threshold, threshold+0.25, luminance)
+  ↓  累加求平均 = 只对亮的部分做模糊
+base + glow × strength
+```
+
+关键前提是 `RenderPipeline.outputNode` **直接吃任意节点图**（已核实源码，
+`pass()` 只收 scene+camera，但 outputNode 不限），所以整条链没有额外的全屏 quad pass。
+
+**几处必须注意的时序**：
+
+- pipeline 只能在 `renderer.init()` 之后建 —— `_syncPostFX` 有 `_ready` 守卫，
+  且在 init 的 then 里补调一次（配置通常比 init 先到）。
+- fx 参数变了才重建，靠 `_fxKey`（`b0.850|t0.450|r1.200`）；否则每帧重建等于每帧新建 RT。
+- `bloom = 0` 时**拆掉 pipeline 并清空 fxKey**，不能留着继续吃帧。这条有断言。
+
+**mock 的坑**：`scene3d.set` 的 payload 是白名单式拷贝（只挑 bg/lights/ambient/camera/objects），
+新加的 `fx` 字段一开始没进这个列表，表现是"运行时收不到 bloom 参数、pipeline 建不起来"，
+但 `_buildBloom` 手动调用却是成功的。mock 是模拟 GH 侧，字段列表必须跟着一起改。
+
+安装：0.37.0，4,218,880 bytes，md5 `367B00827EB642B099B7FE306ED22ED4`。
+包：`dist/colugo-0.37.0-rh8_36-any.yak`，913,245 bytes，md5 `8A24533AC1E762F4EA910924B7A3BDBE`。
+
+验证：探针新增 Post FX 电池 + bloom 三字段（`RESULT: PASS`，16 只电池）；
+`verify-shader` **35/35**（新增 5 项：pipeline 建起来 / 参数进重建键 / 挂后处理照常出帧 /
+bloom=0 时拆掉 / 拆掉后键清空）。
+全套：109 + 17 + 15 + 6 + 35 + 11 = **193 项**。

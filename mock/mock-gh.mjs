@@ -1255,6 +1255,17 @@ function scenePointSizes() {
   };
 }
 
+
+/* ---------------- v0.37：Bloom（S5）---------------- */
+
+/** 用 shader3d 那张蓝橙渐变做底，只把背景压黑、挂上 bloom —— 橙色的亮部应该炸出辉光 */
+function sceneBloom() {
+  const base = sceneShader3D();
+  base.scene3d.bg = '#000000';
+  base.scene3d.fx = { bloom: 0.85, threshold: 0.45, radius: 1.2 };
+  return base;
+}
+
 /* ---------------- 场景注册 ---------------- */
 
 const SCENES = {
@@ -1268,6 +1279,7 @@ const SCENES = {
   shader3d: { build: sceneShader3D, tick: null, hz: 0 },
   shaderdisplace: { build: sceneShaderDisplace, tick: null, hz: 0 },
   pointsizes: { build: scenePointSizes, tick: null, hz: 0 },
+  bloom: { build: sceneBloom, tick: null, hz: 0 },
   binding: { build: sceneBinding, tick: null, hz: 0 },
   marks: { build: sceneMarks, tick: null, hz: 0 },
   behavior: { build: sceneBehavior, tick: null, hz: 0 },
@@ -1360,7 +1372,7 @@ class Session {
       for (const c of s3.cmds) ops.push({ op: 'cmd3d.upsert', id: c.id, value: c });
       ops.push({
         op: 'scene3d.set',
-        value: { bg: s3.bg, lights: s3.lights, ambient: s3.ambient, camera: s3.camera, objects: s3.objects },
+        value: { bg: s3.bg, lights: s3.lights, ambient: s3.ambient, camera: s3.camera, objects: s3.objects, fx: s3.fx },
       });
     } else {
       ops.push({ op: 'scene3d.clear' });

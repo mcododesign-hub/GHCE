@@ -14,7 +14,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>Colugo</AssemblyName>
     <RootNamespace>Colugo</RootNamespace>
-    <Version>0.36.0</Version>
+    <Version>0.37.0</Version>
     <Title>Colugo · Grasshopper Creative Engine</Title>
     <Description>把 Grasshopper 定义为创意编程前端，浏览器为执行环境。</Description>
     <NoWarn>$(NoWarn);NETSDK1138</NoWarn>

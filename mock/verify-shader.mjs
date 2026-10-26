@@ -235,6 +235,30 @@ check('颜色与位移两张图的哈希都进了材质键',
   (d.key.match(/[0-9a-f]{8}/g) || []).length >= 2, d.key);
 check('位移编译没有报错', !d.err, d.err);
 
+/* ---------- S5：Bloom 后处理 ---------- */
+const fxOn = await ev(`(async () => {
+  const G = window.Colugo;
+  G.selectScene('bloom');
+  const t0 = performance.now();
+  while (performance.now() - t0 < 20000) {
+    const S = G.scene3d;
+    if (S && S._postFX && S.frames > 3) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  await new Promise(r => setTimeout(r, 600));
+  const S = G.scene3d;
+  return {
+    hasPipeline: !!S._postFX,
+    fxKey: S._fxKey || '',
+    frames: S.frames,
+    objects: S.stats().objects,
+  };
+})()`);
+
+check('bloom 打开后建起了 RenderPipeline', fxOn.hasPipeline === true, fxOn);
+check('bloom 参数写进了重建键（b/threshold/radius）', /b0\.850/.test(fxOn.fxKey), fxOn.fxKey);
+check('挂后处理时场景照常出帧', fxOn.frames > 3 && fxOn.objects >= 1, fxOn);
+
 /* ---------- 截图：像素证据 ---------- */
 const shot = await send('Page.captureScreenshot', { format: 'png' });
 if (shot.data) {
@@ -242,6 +266,17 @@ if (shot.data) {
   writeFileSync(join(tmpdir(), 'colugo-shader.png'), Buffer.from(shot.data, 'base64'));
   console.log('  screenshot: ' + join(tmpdir(), 'colugo-shader.png'));
 }
+
+/* ---------- 关掉 bloom：pipeline 必须被拆掉，不能留着继续吃帧 ---------- */
+const fxOff = await ev(`(() => {
+  const S = window.Colugo.scene3d;
+  const cfg = { ...S.config, fx: { bloom: 0, threshold: 0.3, radius: 1.2 } };
+  S._setConfig(cfg);
+  return { hasPipeline: !!S._postFX, fxKey: S._fxKey || '' };
+})()`);
+
+check('bloom = 0 时 pipeline 被拆掉', fxOff.hasPipeline === false, fxOff);
+check('拆掉后重建键被清空（下次开启会重建）', fxOff.fxKey === '', fxOff.fxKey);
 
 const bad = logs.filter((l) => /^EXC:/.test(l) || /^error:/.test(l));
 check('无控制台错误', bad.length === 0, bad);

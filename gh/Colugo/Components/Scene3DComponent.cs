@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using Grasshopper.Kernel;
@@ -148,4 +148,55 @@ namespace Colugo.Components
             DA.SetData(0, new Colugo_Scene3D(scene));
         }
     }
+
+    /// <summary>
+    /// S5：给 Scene 3D 挂后处理。
+    /// 做成独立电池而不是给 Scene 3D 加三个端口 —— 旧定义一个字都不用改，
+    /// 也不用把 4 个输入变成 7 个（那会顶到"≤6"的约定）。
+    /// </summary>
+    public class PostFXComponent : GH_Component
+    {
+        public PostFXComponent()
+            : base("Post FX", "FX", "Add bloom to a 3D scene", "Colugo", "3D") { }
+
+        public override Guid ComponentGuid => new Guid("7b2c4d10-3333-4c03-9f03-0000000000dd");
+        protected override Bitmap Icon => Icons.PostFX;
+
+        protected override void RegisterInputParams(GH_InputParamManager p)
+        {
+            p.AddParameter(new Param_Colugo_Scene3D(), "Scene", "S", "Scene from Scene 3D", GH_ParamAccess.item);
+            p.AddNumberParameter("Bloom", "B", "Glow strength. 0 = off, 0.5-1.5 is the useful range",
+                GH_ParamAccess.item, 0.8);
+            p.AddNumberParameter("Threshold", "T", "Luminance above which pixels glow, 0-1",
+                GH_ParamAccess.item, 0.55);
+            p.AddNumberParameter("Radius", "R", "Blur radius multiplier", GH_ParamAccess.item, 1.0);
+        }
+
+        protected override void RegisterOutputParams(GH_OutputParamManager p) =>
+            p.AddParameter(new Param_Colugo_Scene3D(), "Scene", "S",
+                "Scene carrying post FX, feed into Render Output", GH_ParamAccess.item);
+
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            Colugo_Scene3D goo = null;
+            if (!DA.GetData(0, ref goo) || goo?.Value == null)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Missing Scene");
+                return;
+            }
+            double bloom = 0.8, threshold = 0.55, radius = 1.0;
+            DA.GetData(1, ref bloom);
+            DA.GetData(2, ref threshold);
+            DA.GetData(3, ref radius);
+            if (bloom <= 0)
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "Bloom = 0，后处理关闭，走原来的直接渲染");
+
+            var s = goo.Value.Duplicate();
+            s.Bloom = Math.Clamp(bloom, 0, 4);
+            s.BloomThreshold = Math.Clamp(threshold, 0, 1);
+            s.BloomRadius = Math.Clamp(radius, 0.1, 8);
+            DA.SetData(0, new Colugo_Scene3D(s));
+        }
+    }
+
 }

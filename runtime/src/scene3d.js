@@ -64,6 +64,9 @@ export class Scene3D {
     // 有材质用了 uTime 就必须逐帧跑：否则第 566 行的提前返回会让 Shader 定格
     this._shaderAnimated = false;
     this.lastShaderError = '';
+    // 后处理（S5）：fx 配置变了才重建，否则每帧重建 pipeline 等于每帧新建 RT
+    this._postFX = null;
+    this._fxKey = '';
 
     // 视图旋转（不改 GH 数据，只改相机；在自动取景的基础上叠加）
     this._orbit = { yaw: 0, pitch: 0, dragging: false, lastX: 0, lastY: 0 };
@@ -107,6 +110,7 @@ export class Scene3D {
       this.backend = this.renderer.backend?.isWebGLBackend ? 'webgl2' : 'webgpu';
       this._ready = true;      // 后端就绪，第一帧从这里开始
       if (this._size) this.resize(this._size.w, this._size.h);
+      this._syncPostFX();      // 配置可能早于 init 到达，这里补建
       this._dirty = true;
     }).catch((e) => {
       console.error('[scene3d] renderer init 失败', e);
@@ -249,7 +253,83 @@ export class Scene3D {
     }
     for (const [id, obj] of this.objects) obj.visible = order.includes(id);
 
+    this._syncPostFX();
     this._needsFrame = true;
+  }
+
+  /**
+   * S5：bloom 用一条**亮度加权模糊**近似，不需要多级 RT 链 ——
+   * 每次采样原图时同时算亮度掩码再累加，等价于"只对亮的部分做模糊"。
+   * RenderPipeline.outputNode 直接吃节点图，所以整条链是一张图，没有额外的全屏 quad pass。
+   */
+  _syncPostFX() {
+    if (!this._ready || !this.T || !this.shader) return;
+    const fx = (this.config && this.config.fx) || {};
+    const bloom = Number(fx.bloom);
+    const on = Number.isFinite(bloom) && bloom > 0;
+
+    if (!on) {
+      if (this._postFX) {
+        try { this._postFX.pipeline.dispose(); } catch { /* 已经没了 */ }
+        this._postFX = null;
+        this._fxKey = '';
+      }
+      return;
+    }
+
+    const threshold = Number.isFinite(Number(fx.threshold)) ? Number(fx.threshold) : 0.55;
+    const radius = Number.isFinite(Number(fx.radius)) ? Number(fx.radius) : 1;
+    const key = `b${bloom.toFixed(3)}|t${threshold.toFixed(3)}|r${radius.toFixed(3)}`;
+    if (key === this._fxKey && this._postFX) return;
+
+    try {
+      if (this._postFX) { try { this._postFX.pipeline.dispose(); } catch { /* ignore */ } }
+      this._postFX = this._buildBloom(bloom, threshold, radius);
+      this._fxKey = key;
+    } catch (e) {
+      console.warn('[scene3d] 后处理构建失败，回退直接渲染：', e);
+      this._postFX = null;
+      this._fxKey = '';
+    }
+  }
+
+  _buildBloom(bloom, threshold, radius) {
+    const THREE = this.T;
+    const { tsl } = this;
+
+    const pipeline = new THREE.RenderPipeline(this.renderer);
+    const scenePass = tsl.pass(this.scene, this.camera);
+    const tex = scenePass.getTextureNode();
+
+    const uv = tsl.uv();
+    const base = tex.sample(uv);
+
+    const w = Math.max(1, (this._size && this._size.w) || this.canvas.width || 1280);
+    const h = Math.max(1, (this._size && this._size.h) || this.canvas.height || 720);
+    const texel = tsl.vec2(1 / w, 1 / h);
+
+    const LUM = (c) => c.r.mul(0.2126).add(c.g.mul(0.7152)).add(c.b.mul(0.0722));
+
+    // 13 抽头：内圈 9 个做主体，外圈 4 个拉出辉光的"长尾巴"
+    const step = 1.4 * radius;
+    const taps = [
+      [0, 0], [1, 0], [-1, 0], [0, 1], [0, -1],
+      [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7],
+      [2.4, 0], [-2.4, 0], [0, 2.4], [0, -2.4],
+    ];
+
+    let acc = null;
+    for (const [dx, dy] of taps) {
+      const o = texel.mul(tsl.vec2(dx * step, dy * step));
+      const smp = tex.sample(uv.add(o));
+      const mask = tsl.smoothstep(threshold, threshold + 0.25, LUM(smp));
+      const term = smp.rgb.mul(mask);
+      acc = acc ? acc.add(term) : term;
+    }
+    const glow = acc.div(taps.length);
+
+    pipeline.outputNode = tsl.vec4(base.rgb.add(glow.mul(bloom)), 1);
+    return { pipeline, render: () => pipeline.render() };
   }
 
   _syncLights(v) {
@@ -619,7 +699,8 @@ export class Scene3D {
       this.frameScene();
     }
 
-    this.renderer.render(this.scene, this.camera);
+    if (this._postFX) this._postFX.render();
+    else this.renderer.render(this.scene, this.camera);
     this.frames++;
 
     const ms = performance.now() - t0;

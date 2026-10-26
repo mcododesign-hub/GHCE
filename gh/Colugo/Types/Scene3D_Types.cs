@@ -205,6 +205,14 @@ namespace Colugo.Types
         public bool Lights = true;       // built-in three-point rig
         public double Ambient = 1.0;     // intensity multiplier for the rig
 
+        /// <summary>
+        /// S5 后处理：bloom 强度。0 = 关闭，完全走原来的直接渲染路径 ——
+        /// 旧定义没有这三个字段，所以行为一点不变。
+        /// </summary>
+        public double Bloom = 0.0;
+        public double BloomThreshold = 0.55;
+        public double BloomRadius = 1.0;
+
         public Scene3DDef Duplicate()
         {
             var s = (Scene3DDef)MemberwiseClone();

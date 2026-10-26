@@ -767,7 +767,8 @@ namespace Colugo.Bridge
         {
             var ids = new StringBuilder();
             foreach (var c in s.Cmds) ids.Append(c.Id).Append(',');
-            return $"{s.Background}|{(s.Lights ? 1 : 0)}|{s.Ambient:0.###}|{s.Camera?.Key() ?? "auto"}|{ids}";
+            return $"{s.Background}|{(s.Lights ? 1 : 0)}|{s.Ambient:0.###}|{s.Camera?.Key() ?? "auto"}|{ids}"
+                   + $"|fx{s.Bloom:0.###},{s.BloomThreshold:0.###},{s.BloomRadius:0.###}";
         }
 
         static Dictionary<string, object> Scene3DPayload(Scene3DDef s)
@@ -793,6 +794,13 @@ namespace Colugo.Bridge
             {
                 ["bg"] = s.Background,
                 ["lights"] = s.Lights,
+                // S5：bloom 关闭时也发（值是 0），运行时看到 0 就拆掉 pipeline
+                ["fx"] = new Dictionary<string, object>
+                {
+                    ["bloom"] = s.Bloom,
+                    ["threshold"] = s.BloomThreshold,
+                    ["radius"] = s.BloomRadius,
+                },
                 ["ambient"] = s.Ambient,
                 ["camera"] = camPayload,
                 ["objects"] = ids,
