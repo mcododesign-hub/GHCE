@@ -1600,3 +1600,14 @@ IR 结构 / const id 稳定性 / Material 深拷贝）；`verify-shader.mjs` 18 
 vec3 的三个分量 / const id 稳定性）；`verify-shader.mjs` **20/20**（新增 swizzle+step+vec3 编译、
 vec3 输出类型）。
 全套：109 + 17 + 15 + 6 + 20 = **167 项**。
+
+**再补一条 `replay-shader.mjs`（11 项）—— 这一步补的才是真盲区。**
+
+在此之前，C# 侧的断言绿、运行时侧的断言也绿，但中间那段 JSON 从没被真字节验过：
+字段名差一个字母、数字被序列化成字符串、数组被多包一层，两边各自的断言都不会响。
+
+现在探针把**真实构建方式产出的 13 节点 IR** 塞进 cmd3d，走完 PatchBuilder → JSON，
+`replay-shader.mjs` 把它直接灌进运行时，验：9 种 op 全被认出、输出 v3、time 让场景逐帧、
+材质 key 带 C# 算出的结构哈希、只有一个材质、无控制台错误。
+截图 `%TEMP%\colugo-shader-replay.png` 上是 `sin(position.x * 0.12 + time)` 的条纹，
+深蓝到暖橙约两个周期 —— C# 算的图，在 GPU 上画出来了。

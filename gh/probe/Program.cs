@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -1310,6 +1310,73 @@ class Probe
         bool vecOk = vNode.Args.ContainsKey("x") && vNode.Args.ContainsKey("y") && vNode.Args.ContainsKey("z");
         Console.WriteLine($"  shader vec3: keys=[{string.Join(",", vNode.Args.Keys)}] ok={vecOk}");
         if (!vecOk) fail++;
+
+        // --- 把真实产出的 IR 塞进 cmd3d，导出 patch 供运行时回放 ---
+        // 这一段才是"两端字段一致"的证据：前面的断言只能证明 C# 内部结构对，
+        // 证明不了 JSON 出门之后运行时还认。字段名差一个字母，两边各自都是绿的。
+        {
+            var ex = new Colugo.Types.ShaderExprDef("cs0a1b");
+            var p = ex.Add("position", "v3", ("space", "local"));
+            var px = ex.Add("swizzle", "f", ("a", p), ("c", "x"));
+            var kk = ex.Add("const", "f", ("v", 0.12));
+            var mul = ex.Add("mul", "f", ("a", px), ("b", kk));
+            var tm = ex.Add("time", "f");
+            var add = ex.Add("add", "f", ("a", mul), ("b", tm));
+            var sn = ex.Add("sin", "f", ("a", add));
+            var lo = ex.Add("const", "f", ("v", -1.0));
+            var hi = ex.Add("const", "f", ("v", 1.0));
+            var rm = ex.Add("remap", "f", ("x", sn), ("in0", lo), ("in1", hi), ("out1", 1.0));
+            var cN = ex.Add("const", "v3", ("v", new[] { 0.03, 0.06, 0.12 }));
+            var cW = ex.Add("const", "v3", ("v", new[] { 1.0, 0.55, 0.10 }));
+            var mx = ex.Add("mix", "v3", ("a", cN), ("b", cW), ("t", rm));
+            ex.OutId = mx;
+            ex.Type = "v3";
+
+            var quad = new Colugo.Types.MeshDef
+            {
+                Id = "m_shader",
+                Positions = new double[]
+                {
+                    -50, -50, 0,  50, -50, 0,  50, 50, 0,  -50, 50, 0,
+                },
+                Indices = new int[] { 0, 1, 2, 0, 2, 3 },
+                Xform = new Colugo.Types.Transform3DDef(),
+            };
+            var c3s = new Colugo.Types.Cmd3DDef
+            {
+                Id = "c3_shader_cmd",
+                MeshId = quad.Id,
+                Mesh = quad,
+                Material = new Colugo.Types.Material3DDef
+                {
+                    Mode = 5,            // unlit：只让 colorNode 决定颜色
+                    Color = "#e8e6df",
+                    Shader = ex,
+                },
+                Xform = quad.Xform,
+            };
+            var sc = new Colugo.Types.Scene3DDef { Background = "#07070a", Lights = true };
+            sc.Cmds.Add(c3s);
+
+            var js = new Colugo.Bridge.PatchBuilder().Build(
+                new Colugo.Types.CanvasDef { W = 800, H = 600 },
+                new System.Collections.Generic.List<Colugo.Types.Colugo_Command>(), null, sc, out var sumS);
+
+            bool hasShader = js != null && js.Contains("\"shader\":{");
+            bool hasOp = js != null && js.Contains("\"op\":\"position\"") && js.Contains("\"op\":\"mix\"");
+            bool hasOut = js != null && js.Contains("\"out\":\"" + mx + "\"");
+            bool hasNs = js != null && js.Contains("cs0a1b_");
+            int nodes = ex.Nodes.Count;
+            Console.WriteLine($"  shader patch: shader={hasShader} ops={hasOp} out={hasOut} ns={hasNs} nodes={nodes}  ({sumS})");
+            if (!hasShader || !hasOp || !hasOut || !hasNs) fail++;
+
+            if (js != null)
+            {
+                System.IO.File.WriteAllText(
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "colugo-csharp-patch-shader.json"), js);
+                Console.WriteLine("  wrote: colugo-csharp-patch-shader.json");
+            }
+        }
 
         return fail;
     }
