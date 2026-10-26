@@ -1,6 +1,6 @@
 # 发布到 Rhino PackageManager（Yak）
 
-> 结论：**可以**。GHCE 打成 `.yak` 推到 `yak.rhino3d.com`，用户在 Rhino 里 `PackageManager` 搜 **GHCE** 就能装。
+> 结论：**可以**。Colugo 打成 `.yak` 推到 `yak.rhino3d.com`，用户在 Rhino 里 `PackageManager` 搜 **Colugo** 就能装。
 > 目前只做了打包脚本，**没有推送**；等你把试用案例写完再执行最后一步。
 
 ---
@@ -16,15 +16,15 @@ cd gh
 已经跑通第一部分，产物：
 
 ```
-dist\ghce-0.30.1-rh8_15-any.yak     0.84 MB
-dist\GHCE\                          # 暂存目录：GHCE.gha + manifest.yml
+dist\colugo-0.30.1-rh8_15-any.yak     0.84 MB
+dist\Colugo\                          # 暂存目录：Colugo.gha + manifest.yml
 ```
 
 文件名三段含义：
 
 | 段 | 含义 | 谁决定 |
 |---|---|---|
-| `0.30.1` | 包版本 | `GHCE.csproj` 的 `<Version>`，脚本只读这一处 |
+| `0.30.1` | 包版本 | `Colugo.csproj` 的 `<Version>`，脚本只读这一处 |
 | `rh8_15` | **需要 Rhino 8.15 及以上** | Yak 扫 `.gha` 引用的 RhinoCommon 版本，自动算的 |
 | `any` | 不区分 CPU | AnyCPU 程序集 |
 
@@ -38,9 +38,9 @@ dist\GHCE\                          # 暂存目录：GHCE.gha + manifest.yml
 
 | 项 | 说明 | 现在 |
 |---|---|---|
-| **包名 `GHCE`** | **首次 push 就占用这个名字**，之后不能改（改 = 另一个包） | 定好了 |
+| **包名 `Colugo`** | **首次 push 就占用这个名字**，之后不能改（改 = 另一个包） | 定好了 |
 | **McNeel 账号** | `yak login` 走浏览器授权；以后每个版本都要用**同一个账号** | 你还没登录过 |
-| **版本号** | 只改 `gh/GHCE/GHCE.csproj` 的 `<Version>` | 0.30.1 |
+| **版本号** | 只改 `gh/Colugo/Colugo.csproj` 的 `<Version>` | 0.30.1 |
 | **试用案例 `.gh`** | 放仓库根目录 `examples\`，打包时会自动进 `samples\`（见第 3 节） | **你在写，等它** |
 | **描述 / 链接** | 已写在脚本里，`url` 指向 GitHub；要改就在 `pack-yak.ps1` 里改 | 待你确认 |
 | **图标** | 不强制。清单支持 `icon:`（图片地址），不填就是默认图标；GH 标签页图标来自 `.gha` 本身 | 已有 |
@@ -57,7 +57,7 @@ dist\GHCE\                          # 暂存目录：GHCE.gha + manifest.yml
 安装后落在这里：
 
 ```
-%APPDATA%\McNeel\Rhinoceros\packages\8.0\GHCE\<版本>\samples\
+%APPDATA%\McNeel\Rhinoceros\packages\8.0\Colugo\<版本>\samples\
 ```
 
 **GH 不会自动索引它们**，用户要手动打开。所以更实用的做法是：
@@ -77,12 +77,12 @@ cd gh
 .\pack-yak.ps1
 
 # 3) 推送
-& "D:\Program Files\Rhino 8\System\Yak.exe" push "..\dist\ghce-1.0.0-rh8_15-any.yak"
+& "D:\Program Files\Rhino 8\System\Yak.exe" push "..\dist\colugo-1.0.0-rh8_15-any.yak"
 ```
 
 或者一条命令：`.\pack-yak.ps1 -Push`。
 
-推送成功后会立刻出现在 `https://yak.rhino3d.com/packages/ghce`，
+推送成功后会立刻出现在 `https://yak.rhino3d.com/packages/colugo`，
 PackageManager 的索引有缓存，搜不到先等几分钟或重启 Rhino。
 
 ---
@@ -90,25 +90,25 @@ PackageManager 的索引有缓存，搜不到先等几分钟或重启 Rhino。
 ## 5. 用户怎么装
 
 1. Rhino 里输入 `PackageManager`（或菜单 工具 → 包管理器）；
-2. 搜 `GHCE` → Install；
+2. 搜 `Colugo` → Install；
 3. **重启 Rhino**；
-4. Grasshopper 里出现 `GHCE` 标签页，`Runtime` 分组下有 7 只表达式电池。
+4. Grasshopper 里出现 `Colugo` 标签页，`Runtime` 分组下有 7 只表达式电池。
 
 安装落点：
 
 ```
-%APPDATA%\McNeel\Rhinoceros\packages\8.0\GHCE\<版本>\
+%APPDATA%\McNeel\Rhinoceros\packages\8.0\Colugo\<版本>\
 ```
 
 ---
 
 ## 6. ⚠️ 本机特别注意：先删手工装的那份
 
-你现在 `%APPDATA%\Grasshopper\Libraries\GHCE.gha` 有一份手工安装的，
+你现在 `%APPDATA%\Grasshopper\Libraries\Colugo.gha` 有一份手工安装的，
 它和 yak 包里的那份**是同一批 GUID**。两份同时存在时 GH 会加载两次 ——
-表现为两个 GHCE 标签页、或者电池互相顶掉（`Data conversion failed` 之类）。
+表现为两个 Colugo 标签页、或者电池互相顶掉（`Data conversion failed` 之类）。
 
-**装 yak 版之前，把这个目录里的 `GHCE.gha` 和 `GHCE.*.bak` 全部删掉。**
+**装 yak 版之前，把这个目录里的 `Colugo.gha` 和 `Colugo.*.bak` 全部删掉。**
 
 发布前自查：`gh\probe` 里的 51 个 GUID 唯一性断言仍在跑，能保证包内不撞；但撞不了"两份文件"。
 
@@ -119,8 +119,8 @@ PackageManager 的索引有缓存，搜不到先等几分钟或重启 Rhino。
 | 动作 | 命令 | 说明 |
 |---|---|---|
 | 发新版本 | 改 `<Version>` → `pack-yak.ps1 -Push` | 同版本号不能重复推，会报 already exists |
-| 撤回某个版本 | `yak yank ghce 1.0.0` | 只是从索引隐藏，已装的人不受影响 |
-| 加协作者 | `yak owner add ghce <邮箱>` | 团队发布用；`yak owner list ghce` 查当前所有者 |
+| 撤回某个版本 | `yak yank colugo 1.0.0` | 只是从索引隐藏，已装的人不受影响 |
+| 加协作者 | `yak owner add colugo <邮箱>` | 团队发布用；`yak owner list colugo` 查当前所有者 |
 | 查本地已装 | `yak list` | — |
 
 ---
@@ -143,7 +143,7 @@ Yak 从 `.gha` 引用的 `RhinoCommon` 版本推断最低 Rhino 版本。
 | `找不到 Yak.exe` | Rhino 不在 C:。脚本已从注册表读 `InstallPath`，仍失败就手动改脚本里的 `$rhino` |
 | `yak push` 报 401 | 没登录或 token 过期，重跑 `yak login` |
 | push 报 `already exists` | 版本号重复。改 `<Version>` 再打包 |
-| 装完 GH 里没有 GHCE | ① 没重启 Rhino；② `Libraries` 里还有旧的手工副本；③ Rhino 版本 < 8.15 |
+| 装完 GH 里没有 Colugo | ① 没重启 Rhino；② `Libraries` 里还有旧的手工副本；③ Rhino 版本 < 8.15 |
 | 包体积 | 0.84 MB（内嵌运行时 + three.js r186 + 图标全部现画），正常 |
 | 电池图标是空的 | 图标是 GDI+ 现画的，装完首次打开 GH 才生成；GH 缓存过一次就不会再变 |
 

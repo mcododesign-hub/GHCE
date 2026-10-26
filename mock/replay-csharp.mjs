@@ -13,17 +13,17 @@ import { join } from 'node:path';
 import WebSocket from 'ws';
 
 // 缺省从系统临时目录取，不写死某个用户名下的路径（换机器就 ENOENT）
-const JSON_PATH = process.env.PATCH || join(tmpdir(), 'ghce-csharp-patch.json');
+const JSON_PATH = process.env.PATCH || join(tmpdir(), 'colugo-csharp-patch.json');
 const PORT = Number(process.env.REPLAY_PORT || 8788);
 const CDP_PORT = Number(process.env.CDP_PORT || 9334);
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PAGE = `${process.env.RUNTIME || 'http://127.0.0.1:5173/'}?ws=ws://127.0.0.1:${PORT}/ghce`;
+const PAGE = `${process.env.RUNTIME || 'http://127.0.0.1:5173/'}?ws=ws://127.0.0.1:${PORT}/colugo`;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const patch = await readFile(JSON_PATH, 'utf8');
 
 /* ---------- 极简桥：连接即发一帧 C# 产出的 patch ---------- */
-const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT, path: '/ghce' });
+const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT, path: '/colugo' });
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ v: '0.1', t: 'welcome', doc: 'csharp-replay' }));
   ws.send(patch);
@@ -34,7 +34,7 @@ wss.on('connection', (ws) => {
 });
 
 /* ---------- CDP ---------- */
-const profile = mkdtempSync(join(tmpdir(), 'ghce-replay-'));
+const profile = mkdtempSync(join(tmpdir(), 'colugo-replay-'));
 const chrome = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
   '--window-size=1280,800', `--user-data-dir=${profile}`,
@@ -76,7 +76,7 @@ await send('Page.navigate', { url: PAGE });
 await sleep(2200);
 
 const got = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const c = G.doc.cmds.get('c_test');
   return {
     conn: G.client.state,

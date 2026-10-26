@@ -1,4 +1,4 @@
-# GHCE 插件构建与加载验证
+# Colugo 插件构建与加载验证
 
 **状态：已编译通过（0 错误 0 警告），并做过加载冒烟测试与协议回放。尚未在 Grasshopper 界面里做端到端联调。**
 
@@ -38,11 +38,11 @@ Plug-ins\Grasshopper\GH_IO.dll
 ## 2. 构建与安装
 
 ```bash
-cd gh/GHCE
+cd gh/Colugo
 "/c/Users/ASUS/.dotnet/dotnet.exe" build -c Release
 ```
 
-`csproj` 里有个 `MakeGha` 目标，编译后自动把 `GHCE.dll` 复制成 `GHCE.gha`。
+`csproj` 里有个 `MakeGha` 目标，编译后自动把 `Colugo.dll` 复制成 `Colugo.gha`。
 
 安装（已执行过，文件已就位）：
 
@@ -59,7 +59,7 @@ cd gh
 `字符串缺少终止符` / `缺少右"}"`，看起来像语法错，其实是编码错）。换机器迁移时踩过一次，已补 BOM。
 `gh/` 下所有 `.ps1` 都守这条规矩。
 
-卸载就是删掉 `%APPDATA%\Grasshopper\Libraries\GHCE.gha`。
+卸载就是删掉 `%APPDATA%\Grasshopper\Libraries\Colugo.gha`。
 
 ## 3. 编译时踩到的三个真错误（留档）
 
@@ -85,7 +85,7 @@ DOTNET_ROOT="C:/Program Files/dotnet" "/c/Program Files/dotnet/dotnet.exe" ./bin
 **验安装后的那份文件**（不是构建输出），把 BIN 指向库目录：
 
 ```bash
-GHCE_BIN="C:/Users/ASUS/AppData/Roaming/Grasshopper/Libraries" \
+Colugo_BIN="C:/Users/ASUS/AppData/Roaming/Grasshopper/Libraries" \
 DOTNET_ROOT="C:/Program Files/dotnet" \
 "/c/Program Files/dotnet/dotnet.exe" ./bin/Release/net7.0-windows/probe.dll
 ```
@@ -96,9 +96,9 @@ DOTNET_ROOT="C:/Program Files/dotnet" \
 实测输出（节选）：
 
 ```
-loaded: GHCE 0.1.0.0
+loaded: Colugo 0.1.0.0
 runtime: 7.0.20
-assembly info: GHCE / 3c9e0000-3333-4c03-9003-0000000000b1
+assembly info: Colugo / 3c9e0000-3333-4c03-9003-0000000000b1
   OK  Canvas         5a0c…a1  in=4 out=1
   OK  Draw Path      5a0c…a3  in=10 out=1
   OK  Path Input     5a0c…a2  in=6 out=2
@@ -152,7 +152,7 @@ Curve ──► Path Input ──► Draw Path ──► Render Output
 
 ## 6. 图标
 
-电池图标在 `GHCE/Icons.cs` 里用 GDI+ 现画（24×24），**不放任何 PNG/SVG 资源文件**。四个都是同一套语义：
+电池图标在 `Colugo/Icons.cs` 里用 GDI+ 现画（24×24），**不放任何 PNG/SVG 资源文件**。四个都是同一套语义：
 
 | 电池 | 图形 | 读作 |
 |---|---|---|
@@ -165,9 +165,9 @@ Curve ──► Path Input ──► Draw Path ──► Render Output
 
 | 参数 | 图形 |
 |---|---|
-| `Param_GHCE_Canvas` | 细边框 + 空画框 |
-| `Param_GHCE_Path` | 细边框 + 四点折线 |
-| `Param_GHCE_Command` | 细边框 + 曲线 + 粉色方块（带样式） |
+| `Param_Colugo_Canvas` | 细边框 + 空画框 |
+| `Param_Colugo_Path` | 细边框 + 四点折线 |
+| `Param_Colugo_Command` | 细边框 + 曲线 + 粉色方块（带样式） |
 
 参数图标必须覆写 `Internal_Icon_24x24`，**不是 `Icon`**：GH 画参数走的是 `Icon_24x24`（final），它内部才读 `Internal_Icon_24x24`；
 `Icon` 这个属性对参数恒为 `null`，拿它判断会误以为没图标。
@@ -189,12 +189,12 @@ GH 里右键 `Render Output` → `图标自检…`，会把四个图标放大 8 
 
 v0.1 要你手动开浏览器、手动跑 node 服务。v0.2 起不用了：
 
-- **运行时页面被编进 `.gha` 的嵌入资源**，插件的桥在 8777 上同时提供 HTTP 页面和 `/ghce` 的 WS 升级。
+- **运行时页面被编进 `.gha` 的嵌入资源**，插件的桥在 8777 上同时提供 HTTP 页面和 `/colugo` 的 WS 升级。
 - `Render Output` 多了 `Preview` 开关（默认 true），第一次求解就会弹一个 **WPF + WebView2 窗口**，里面就是运行时页面 —— 和 Processing 的运行窗一个意思。
 - 窗口关掉后不会再自己弹回来（开关是上升沿触发）。把 `Preview` 拨到 false 也会关窗。
 - WebView2 起不来时**降级为系统浏览器**打开同一地址，错误会挂到电池的 Warning 上，不静默失败。
 
-端口只有一个：`8777`。`http://127.0.0.1:8777/` 是页面，`ws://127.0.0.1:8777/ghce` 是协议。
+端口只有一个：`8777`。`http://127.0.0.1:8777/` 是页面，`ws://127.0.0.1:8777/colugo` 是协议。
 
 ```
 Curve ─► Path Input ─► Draw Path ─► Render Output ─► 预览窗口（自动弹出）
@@ -224,15 +224,15 @@ cd mock && node verify-plugin-serve.mjs
 ## 8. v0.3 的三处改动
 
 **a. `Path` 可以直接接进 `Render Output.Commands`。**
-`GHCE_Command.CastFrom` 现在接受 `GHCE_Path`，用默认样式（白线 1px、main 层）包一层。
+`Colugo_Command.CastFrom` 现在接受 `Colugo_Path`，用默认样式（白线 1px、main 层）包一层。
 所以"只想看一眼"的时候：`Curve → Path Input → Render Output` 三步就够，不用先摆 `Draw Path`。
 要控制线宽/颜色/图层/顺序时才需要 `Draw Path` —— 它的存在意义是**一个几何配多种画笔**，不是必经环节。
 
 **b. `Port` 从输入口去掉了。**
-端口是环境配置，不该出现在作品图里。现在桥从 8777 起自动找空闲端口（8777–8788），实际端口显示在 `Render Output` 的右键菜单里（菜单第一行就是 `GHCE v0.3.1 · 端口 N`），菜单里还有"用外部浏览器打开"。
+端口是环境配置，不该出现在作品图里。现在桥从 8777 起自动找空闲端口（8777–8788），实际端口显示在 `Render Output` 的右键菜单里（菜单第一行就是 `Colugo v0.3.1 · 端口 N`），菜单里还有"用外部浏览器打开"。
 
 端口会漂移带来一个陷阱：页面里 WebSocket 的默认值写死是 8777，端口一漂向导就会连到别处。
-所以预览地址统一用 `BridgeServer.PreviewUrl`（`http://127.0.0.1:{实际端口}/?ws=ws://127.0.0.1:{实际端口}/ghce`），
+所以预览地址统一用 `BridgeServer.PreviewUrl`（`http://127.0.0.1:{实际端口}/?ws=ws://127.0.0.1:{实际端口}/colugo`），
 `Preview` 开关、右键菜单、`Url` 输出三处都走它。实测：8777 被占时自动落到 8778，页面照样 7/7 通过。
 
 **c. 图标每次交独立副本**（见 §6 坑 2）。
@@ -426,7 +426,7 @@ GH 每次求解给你当前那一帧，`Track` 把整段矩阵序列一次发给
 缓动是一条你自己画的线，不是一个下拉里的名字。
 
 
-**Entity Blueprint**（`GHCE / Entity`）
+**Entity Blueprint**（`Colugo / Entity`）
 
 | 端口 | 类型 | 默认 | 说明 |
 |---|---|---|---|
@@ -480,7 +480,7 @@ Curve ─────► Entity Blueprint ─► Entity Look ─► Render Outpu
 两者可以并存。想验证"真的在浏览器里跑"：看 HUD 的 `rev` 不动而画面在变，就是 Track 在起作用。
 
 **原生数据的入口**：
-- 任何接 `Path` 端口的地方都能直连 `Curve`（`GHCE_Path.CastFrom` 内部投影）
+- 任何接 `Path` 端口的地方都能直连 `Curve`（`Colugo_Path.CastFrom` 内部投影）
 - `Path` 也能直连 `Entities` 端口（默认 200 个实例）
 - `Render Output.Commands` 能直连 `Path`（默认白线 1px）
 
@@ -539,7 +539,7 @@ Curve ─────► Entity Blueprint ─► Entity Look ─► Render Outpu
   之后几何在框里怎么转都不裁
 
 数学在 `Types/CameraMath.cs`，**纯 double，不碰 Rhino 类型**，所以探针能在 Rhino 外验。
-`GHCE.Types.CameraDef.Proj` 仍然是 `[s, ox, oy]`，`Transform` 的 `P·M·P⁻¹` 一个字节没动。
+`Colugo.Types.CameraDef.Proj` 仍然是 `[s, ox, oy]`，`Transform` 的 `P·M·P⁻¹` 一个字节没动。
 
 ### 这轮踩的两个坑（都属于"换机器才会暴露"）
 
@@ -560,16 +560,16 @@ GH 用 `ComponentGuid` 做组件身份，撞了不报错，表现是"某只电�
 |---|---|
 | `dotnet build -c Release` | **0 错误 0 警告**（SDK 10.0.402 编 net7.0-windows） |
 | `gh/probe`（对**构建输出**） | **RESULT: PASS**，17 只电池 + 6 个参数类型，icon 全 24×24 |
-| `gh/probe`（对**安装后的 .gha**） | RESULT: PASS，`loaded: GHCE 0.10.0.0` |
+| `gh/probe`（对**安装后的 .gha**） | RESULT: PASS，`loaded: Colugo 0.10.0.0` |
 | 相机数学断言 | 5 条全过：fit s=10 / 中心对齐 / Y 翻转 / 固定 s=5 / margin s=3.6 中心对齐 |
 | 显式图层进协议 | `order42=True multiply=True opacity0.5=True` |
 | `mock/verify.mjs` | **38/38** |
 | `mock/replay-csharp.mjs` | **14/14**（新增"显式图层 order/opacity/blend 落地"一条） |
-| 已安装 | 166,912 bytes，md5 `FEE812170ED8`，`GHCE 0.10.0.0` |
+| 已安装 | 166,912 bytes，md5 `FEE812170ED8`，`Colugo 0.10.0.0` |
 
 **仍未在 Rhino 里验的**：四只新电池的实际手感（尤其 `Project to 2D` 的 `Bounds` 接法）、
 样式管道在真定义里的连线、以及新图标在 GH 里画出来是什么样。
-`%TEMP%\ghce-icons.png`（或右键 `Render Output` → 图标自检）能一次性看全 12 个图标。
+`%TEMP%\colugo-icons.png`（或右键 `Render Output` → 图标自检）能一次性看全 12 个图标。
 
 ---
 
@@ -607,7 +607,7 @@ GH 用 `ComponentGuid` 做组件身份，撞了不报错，表现是"某只电�
 
 ### c) `Path Input` 输入 Page Width/Height 爆红
 
-`Data conversion failed from Number to GHCE Camera` —— 这是 v0.10 的**故意破坏性改动**：
+`Data conversion failed from Number to Colugo Camera` —— 这是 v0.10 的**故意破坏性改动**：
 `Path Input` 从 6 个输入收到 4 个，原来的第 2/3 个（Page Width / Page Height）位置现在是 `Camera`。
 旧定义里那两根线还插在原位置，于是数字往 `Camera` 参数里灌，必然报这个错。
 
@@ -647,10 +647,10 @@ GH 用 `ComponentGuid` 做组件身份，撞了不报错，表现是"某只电�
 | `mock/verify-xform.mjs`（新） | **15/15** 纯数学：分解-合成往返、180° 不塌、四种波形、offset 就是摆动中心 |
 | `mock/verify.mjs` | **38/38** |
 | `mock/replay-csharp.mjs` | **15/15** |
-| 构建产物 | 187,904 bytes，md5 `4BE30FFD5D70`，`GHCE 0.11.0.0` |
+| 构建产物 | 187,904 bytes，md5 `4BE30FFD5D70`，`Colugo 0.11.0.0` |
 
-**已安装**：`%APPDATA%\Grasshopper\Libraries\GHCE.gha`，187,904 bytes，md5 `4BE30FFD5D70`。
-`GHCE_BIN=%APPDATA%\Grasshopper\Libraries` 对**安装后那份**跑探针 → `loaded: GHCE 0.11.0.0`、RESULT: PASS。
+**已安装**：`%APPDATA%\Grasshopper\Libraries\Colugo.gha`，187,904 bytes，md5 `4BE30FFD5D70`。
+`Colugo_BIN=%APPDATA%\Grasshopper\Libraries` 对**安装后那份**跑探针 → `loaded: Colugo 0.11.0.0`、RESULT: PASS。
 装之前 Rhino 正开着（PID 6776 / 8920）锁了文件，用 `install.ps1 -Force` 结束进程后装上去的
 （用户确认过会丢未保存定义）。**下次改版本记得先关 Rhino，别走 -Force。**
 
@@ -788,7 +788,7 @@ GH 每次重算产出的矩阵在数学上一样，但最后几位浮点可能�
 | 项 | 结果 |
 |---|---|
 | `dotnet build -c Release` | 0 错误 0 警告 |
-| `gh/probe`（构建产物 + 安装后 .gha） | **RESULT: PASS**，16 只电池，`guids 23 个 / 唯一 23 个`，`loaded: GHCE 0.13.0.0` |
+| `gh/probe`（构建产物 + 安装后 .gha） | **RESULT: PASS**，16 只电池，`guids 23 个 / 唯一 23 个`，`loaded: Colugo 0.13.0.0` |
 | `mock/verify-tween.mjs` | **13/13**（新增"第一次出现从 0 演"、"浮点抖动不触发"） |
 | `mock/verify-v012.mjs` | **14/14**（新增"新指令第一次出现时从 0 开始演"） |
 | `mock/verify.mjs` | 38/38 |
@@ -884,7 +884,7 @@ PASS  逐帧喂数据时直通（不叠 0.9 秒缓动）  → {"active":0,"p":1,
 ```
 
 **踩到的坑**：`verify.mjs` 一开始 8 项 FAIL，原因不是代码 —— 页面默认连 `ws://127.0.0.1:8777`，
-而那是当时**正开着的真 Rhino**，不是 mock 桥。必须 `PAGE="...?ws=ws://127.0.0.1:8788/ghce"`。
+而那是当时**正开着的真 Rhino**，不是 mock 桥。必须 `PAGE="...?ws=ws://127.0.0.1:8788/colugo"`。
 症状误导性很强（"模拟桥下显示演示场景按钮 → false"，像是 UI 坏了），实际是连错了桥。
 
 
@@ -972,7 +972,7 @@ node mock/grab.mjs      # 期望 payload ok: true，字段齐全
 
 # ② 运行时接收侧：真浏览器 + 插件桥
 probe --signal
-BASE='http://127.0.0.1:8788/?ws=ws://127.0.0.1:8788/ghce' node mock/verify-signal-live.mjs
+BASE='http://127.0.0.1:8788/?ws=ws://127.0.0.1:8788/colugo' node mock/verify-signal-live.mjs
 # 期望 signalIds: ["a1b2c3d4"]，且 stat.signals 里有值
 
 # ③ stat 解析侧：探针内置，不依赖网络
@@ -1139,7 +1139,7 @@ Pen : Color.FromArgb(0x66, Ink)
 
 ### 验证
 
-探针支持 `GHCE_ICON_THEME=light|dark` 强制主题，出两张对照图
+探针支持 `Colugo_ICON_THEME=light|dark` 强制主题，出两张对照图
 （`docs/shots/icons-light.png` / `icons-dark.png`），连图背景也跟着主题变。
 
 > **这套验证不够，见 §15。** 当时只截了"一个数据图标"统计明暗占比（light 1.1% 暗 / 62% 亮，
@@ -1148,14 +1148,14 @@ Pen : Color.FromArgb(0x66, Ink)
 
 **已知限制**：图标有缓存，GH 运行中切换主题不会重绘，要重启 GH。
 
-## 14. 参数类型统一归到 `GHCE / Data`
+## 14. 参数类型统一归到 `Colugo / Data`
 
-12 个 `Param_GHCE_*` 的 SubCategory 从 `Drawing` / `Output` / `Entity` / `Random` / `3D`
+12 个 `Param_Colugo_*` 的 SubCategory 从 `Drawing` / `Output` / `Entity` / `Random` / `3D`
 统一改成 **`Data`**。标签页里数据图标不再散落在功能电池之间。
 
 改法：只动带 `GH_ParamAccess` 的 base 构造，电池的 `base(...)` 不带这个参数，所以不会误伤。
 
-探针可以验证：`OK param Canvas [GHCE/Data] 24x24`。
+探针可以验证：`OK param Canvas [Colugo/Data] 24x24`。
 
 ## 15. 图标颜色全部令牌化（v0.28.1）
 
@@ -1237,7 +1237,7 @@ new SolidBrush(Color.FromArgb(0x18, 0x18, 0x20))   // 不透明近黑，画在 D
 
 ### 验证
 
-口径不变（逐只图标：cover ≥ 4%、maxΔ ≥ 80），但 `GHCE_ICON_THEME` 现在只切**对照图的背景**，
+口径不变（逐只图标：cover ≥ 4%、maxΔ ≥ 80），但 `Colugo_ICON_THEME` 现在只切**对照图的背景**，
 不切调色板 —— 两张图的内容一致，正好证明"面板深浅都不影响"。
 
 | 对照图背景 | 最弱覆盖 | 最弱反差 | 结果 |
@@ -1320,7 +1320,7 @@ click ─► Event Rule ─► v_w (0/1) ─► Bind(width = 1.5 + 6·v_w) ─�
 | `Bind` | Commands, Property(1–2), Expression | Commands | 1 stroke width / 2 opacity |
 | `Event Rule` | Commands, Event, Variable, Write(1–3), Value, Enable | Commands | 1 set / 2 toggle / 3 add；`key:a` 写法省掉 Detail 端口 |
 
-新数据类型 `GHCE Expression`（`GHCE / Data`，带图标）；数字直接连表达式端口会转成常量。
+新数据类型 `Colugo Expression`（`Colugo / Data`，带图标）；数字直接连表达式端口会转成常量。
 
 ### 验证
 
@@ -1482,3 +1482,45 @@ Blueprint → Look → Write State ×N → Spawn → Destroy → Render Output
 所有作品的速度会静默翻倍。
 
 `Runtime DT`（0 输入 / 1 输出）把它变成唯一来源。安装：0.32.1，4,152,320 bytes，md5 `988A23C769C8`。
+
+### 0.33.0 P1-B 平面表达 + 改名为 Colugo
+
+四只电池进 `Components/CompositionComponents.cs`（现在叫 `gh/Colugo/`）：
+
+| 电池 | 端口 | 关键决定 |
+|---|---|---|
+| `Text` | Text / Font / Size / Bold / Italic / Tolerance → Curves, Info | 走 RhinoCommon `TextEntity` 转曲线。运行时**不认字体**，导出因此零依赖 |
+| `Image` | File / Max Size → Image, Info | 读盘 → 等比降采样 → data URL，同路径+尺寸缓存 |
+| `Draw Image` | Image / Layer / Order / X / Y / Opacity → Commands | 只负责放哪、多透明，缩放归变换 |
+| `Clip` | Commands / Clip Path / Mode → Commands | 模具用**页面坐标**，在指令 `transform` **之前**落剪 |
+
+`geom` 的 `kind:"image"` 是**单位方块**：位置与尺寸全在矩阵里，与 Mark 的印章同一套语义。
+三张同源图共用一份 `geom.upsert` —— 这就是"base64 走文档、而不是每条指令带一张图"的理由。
+
+`Clip` 的反相用 `new Path2D()` 下整幅画布 + `addPath` 模具，一次 `evenodd` 成路径；
+SVG 侧转 `<clipPath>`，PNG 与 SVG 的边界误差 < 1px（已断言）。
+
+**顺手修两个挡路的错：**
+
+1. `CompositionComponents` 的四只电池 GUID 用了 `c1–c4`，与 `RandomComponents` 撞车。
+   探针判"重复的 GUID"，后果是旧 `.gh` 打开时认错电池。已改到 `c5 / c7 / c8 / c9`。
+2. `verify.mjs` 里反相裁剪的采样点 `(150,560)` 落在 64px 棋盘的**格缝**上——图素 `(7.4,7.4)`，
+   离格边 0.6 个图素，双线性插值把邻格深色按 85% 混进来，`240,120,40` 被稀释成 `69,46,40`，
+   看着像裁剪漏了。改到格心 `(234,773)` / `(136,579)` 双点取亮者。
+   **教训**：测试素材缩小 4 倍时，采样点必须重新算到格心，不能沿用原来的坐标。
+
+**改名为 Colugo（鼯猴）**，全量替换 81 个文件 1048 处：
+
+| 改了 | 没改 |
+|---|---|
+| 命名空间 / 程序集 / `.gha` 文件名 / 目录 `gh/GHCE → gh/Colugo` | 全部 GUID（旧 `.gh` 的电池引用仍然有效） |
+| WS 路径 `/ghce → /colugo`、`window.GHCE → window.Colugo` | 版本号体系 |
+| yak 包名、Tab 名、Title | `.workbuddy/memory` 下的历史日志（已反向还原） |
+
+`obj/` 必须删掉再编：`project.assets.json` 里写的是旧绝对路径，不删会报路径错。
+
+安装：0.33.0，4,170,240 bytes，md5 `CAD735CC26D2C349E3973F97A0E0BD3A`。
+包：`dist/colugo-0.33.0-rh8_36-any.yak`，895,649 bytes，md5 `AB9C2EA2002EB2052CF5CB5CBC528231`。
+
+验证：verify **109/109** + verify-3d **17/17** + replay-csharp **15/15** + replay-3d **6/6** = 147 项；
+探针 `RESULT: PASS`（50 只电池 / 63 GUID 唯一 / 14 数据类型）。

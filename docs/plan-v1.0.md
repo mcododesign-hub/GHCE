@@ -1,9 +1,9 @@
-# GHCE 任务编排 · v0.9.0 → v1.0
+# Colugo 任务编排 · v0.9.0 → v1.0
 
-写于 2026-10-22 21:45 · 基线 **GHCE 0.9.0 / 13 只电池**
-更新 2026-10-22 22:20 · **GHCE 0.10.0 / 17 只电池 · R1 的三项已落地，R0 待人工验收**
-更新 2026-10-22 23:30 · **GHCE 0.11.0 / 19 只电池 · R3（阶段 3）已收尾，PSR 修好，仍待人工验收**
-更新 2026-10-23 00:05 · **GHCE 0.12.0 · Transform 改为逐指令 Xform + 自动过渡；Event Trigger 改管道；预览补齐三处**
+写于 2026-10-22 21:45 · 基线 **Colugo 0.9.0 / 13 只电池**
+更新 2026-10-22 22:20 · **Colugo 0.10.0 / 17 只电池 · R1 的三项已落地，R0 待人工验收**
+更新 2026-10-22 23:30 · **Colugo 0.11.0 / 19 只电池 · R3（阶段 3）已收尾，PSR 修好，仍待人工验收**
+更新 2026-10-23 00:05 · **Colugo 0.12.0 · Transform 改为逐指令 Xform + 自动过渡；Event Trigger 改管道；预览补齐三处**
 
 这份文档回答两个问题：**现在站在哪**、**接下来按什么顺序做**。
 它不重复任务书（`Grasshopper Creative Coding Engine.md`）和阶段清单（`docs/stage-plan.md`），
@@ -21,7 +21,7 @@
 | WebView2 Runtime | 155.0.4283.62 | 预览窗能用 |
 | Node | v22.22.2 | 够跑 `mock/`，但 `node_modules` 未装（`npm install` 一次） |
 | 8777–8788 | 全空闲 | 插件首次启动会占 8777 |
-| 已装插件 | `%APPDATA%\Grasshopper\Libraries\GHCE.gha` · **166912 bytes · md5 `fee812170ed8…` · v0.10.0** | 与源产物一致（脚本已校验） |
+| 已装插件 | `%APPDATA%\Grasshopper\Libraries\Colugo.gha` · **166912 bytes · md5 `fee812170ed8…` · v0.10.0** | 与源产物一致（脚本已校验） |
 
 **能跑的三条链（不需要编译）**
 
@@ -55,7 +55,7 @@
 |---|---|
 | 目标 | 证明 GH 求解能驱动浏览器，且几何改动不重载页面 |
 | 交付 | 一份 `.gh` 定义文件存入 `examples/`（目前仓库里没有可复用的定义，这是缺口） |
-| 验收 | ① GHCE 标签出现 13 只电池 ② 预览窗自动弹出、HUD `open` ③ 拖控制点时图形变且 `document` 不重新加载 ④ `Message` 从 `rev 1` 单调递增 |
+| 验收 | ① Colugo 标签出现 13 只电池 ② 预览窗自动弹出、HUD `open` ③ 拖控制点时图形变且 `document` 不重新加载 ④ `Message` 从 `rev 1` 单调递增 |
 | 依赖 | 无 |
 
 产出物建议：`examples/static-plotter.gh`、`examples/entity-flow.gh`、`examples/living-lines.gh`。
@@ -139,7 +139,7 @@ R0  ──► R1  ──► R2  ──► R3  ─┬─► R4 ──┐
 
 不满足以下四条就不算完成：
 
-1. `%APPDATA%\Grasshopper\Libraries\GHCE.gha` 的 md5 与 `bin/Release` 产物一致（`install.ps1` 会打）。
+1. `%APPDATA%\Grasshopper\Libraries\Colugo.gha` 的 md5 与 `bin/Release` 产物一致（`install.ps1` 会打）。
 2. 在 Rhino 里用一个 `examples/*.gh` 真的跑过一次，有截图进 `docs/shots/`。
 3. `mock/verify.mjs` 全绿（R1 之后会从 38 项继续长）。
 4. `docs/stage-plan.md` 里对应行的 ✅/⚠️/⬜ 被改过 —— 文档不同步等于没做。
@@ -170,13 +170,13 @@ dotnet --list-sdks                          # 有输出才算装好
 ### 4.3 新增第三方引用必须配加载期解析钩子
 
 GH 加载 `.gha` 会遍历全部类型。任何类型的字段引用了找不到的程序集 → 整个库加载失败 →
-**表现是「GHCE 标签页根本没出现」，而不是某个电池报红**。
+**表现是「Colugo 标签页根本没出现」，而不是某个电池报红**。
 `AssemblyInit.cs` 里的 `[ModuleInitializer]` + `AssemblyResolve` 是为此存在的，新增引用（图像库、MathNet…）必须在这里补映射。
 
 ### 4.4 改 `runtime/` 之后必须重编
 
 运行时页面是**嵌入资源**。改 `runtime/index.html` 或 `runtime/src/*.js` 后，只重启 Rhino 无效，
-必须 `dotnet build` → `install.ps1`。判断方法：`GHCE.gha` 的字节数和 md5 变了才是真的新版本。
+必须 `dotnet build` → `install.ps1`。判断方法：`Colugo.gha` 的字节数和 md5 变了才是真的新版本。
 
 ### 4.5 更新插件必须关 Rhino
 
@@ -201,7 +201,7 @@ Rhino 当前未运行，安装已在此状态下完成。按顺序做，每步�
 | # | 操作 | 期望 | 不符合时 |
 |---|---|---|---|
 | 1 | 启动 `D:\Program Files\Rhino 8\System\Rhino.exe`，命令行输入 `Grasshopper` | GH 打开 | — |
-| 2 | 左侧标签栏找 `GHCE` | 出现，5 组 **17 只**电池（Output 2 / Drawing 8 / Animation 2 / Entity 3 / Input 2） | 标签不出现 → Rhino 命令栏搜 `GHCE` 有没有加载异常；确认 `%APPDATA%\Grasshopper\Libraries\GHCE.gha` 是 166912 字节（§4.3） |
+| 2 | 左侧标签栏找 `Colugo` | 出现，5 组 **17 只**电池（Output 2 / Drawing 8 / Animation 2 / Entity 3 / Input 2） | 标签不出现 → Rhino 命令栏搜 `Colugo` 有没有加载异常；确认 `%APPDATA%\Grasshopper\Libraries\Colugo.gha` 是 166912 字节（§4.3） |
 | 3 | 拉一条 `Curve`，接 `Path Input` → `Render Output`，`Preview` 保持 true | 弹出一个窗口，里面是深色画布 + 左上 HUD | 窗口不弹 → 电池 Warning 会写原因；WebView2 起不来会降级成系统浏览器 |
 | 4 | 看 HUD 的「连接」和 `Render Output` 的 `Message` | `open`；`1 client · rev 1: N ops, X ms` | 一直 `0 client` / HUD `retry` → 端口没对上，右键 `Render Output` 第一行看实际端口（§4.6） |
 | 5 | 在 Rhino 里拖曲线控制点 | 窗口里图形实时跟变，页面**不刷新**（HUD 的 `rev` 涨，不闪白） | 涨了但画面不动 → 相机把几何框到画外了，调 `Margin` 或 `Page W/H` |
@@ -232,7 +232,7 @@ Rhino 当前未运行，安装已在此状态下完成。按顺序做，每步�
 ## 7. R1 实际交付（v0.10.0）
 
 **新增四只电池**：`Project to 2D`（6 入）、`Layer`（6 入）、`Stroke Style`（6 入）、`Fill Style`（4 入）。
-新的数据类型 `GHCE Camera`。共 **17 只电池 / 6 个参数类型**。
+新的数据类型 `Colugo Camera`。共 **17 只电池 / 6 个参数类型**。
 
 **破坏性变更**：`Path Input` 从 6 口变 4 口（`Geo / Tol / Camera / Id`），W/H/Margin 搬进相机。
 不接相机时行为与 v0.9 一致，所以最短链不用改线，但**接在 W/H/Margin 上的线会掉**。

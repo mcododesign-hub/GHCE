@@ -36,7 +36,7 @@ export class BridgeClient {
       this._send({
         v: '0.1',
         t: 'hello',
-        client: 'ghce-runtime',
+        client: 'colugo-runtime',
         caps: { backends: ['canvas2d', 'svg'], dpr: Math.min(window.devicePixelRatio || 1, 2) },
       });
       this._setState('open');

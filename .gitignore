@@ -1,6 +1,6 @@
 # ---- 构建产物 ----
-gh/GHCE/bin/
-gh/GHCE/obj/
+gh/Colugo/bin/
+gh/Colugo/obj/
 gh/probe/bin/
 gh/probe/obj/
 **/bin/Release/

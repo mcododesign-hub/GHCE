@@ -1,7 +1,7 @@
 # Grasshopper Creative Coding Engine
 ## 基于 Grasshopper 的可视化创意编程与实时艺术系统研发任务书
 
-**项目代号：GH Creative Engine（GHCE）**  
+**项目代号：GH Creative Engine（Colugo）**  
 **文档版本：V0.1 / 概念研发任务书**  
 **目标平台：Rhino 8 + Grasshopper，浏览器运行时**  
 **技术方向：Grasshopper / RhinoCommon / C# / JavaScript / p5.js / Three.js / TSL**

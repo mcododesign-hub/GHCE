@@ -19,7 +19,7 @@ const PORT = Number(process.env.V012_PORT || 8901);
 const CDP_PORT = Number(process.env.CDP_PORT || 9337);
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const RUNTIME = process.env.RUNTIME || 'http://127.0.0.1:5173/';
-const PAGE = `${RUNTIME}?ws=ws://127.0.0.1:${PORT}/ghce`;
+const PAGE = `${RUNTIME}?ws=ws://127.0.0.1:${PORT}/colugo`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const N = 25;
@@ -78,7 +78,7 @@ const PATCH3 = {
 };
 
 /* ---------- 桥 ---------- */
-const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT, path: '/ghce' });
+const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT, path: '/colugo' });
 let peer = null;
 wss.on('connection', (ws) => {
   peer = ws;
@@ -91,7 +91,7 @@ wss.on('connection', (ws) => {
 });
 
 /* ---------- Chrome ---------- */
-const profile = mkdtempSync(join(tmpdir(), 'ghce-v012-'));
+const profile = mkdtempSync(join(tmpdir(), 'colugo-v012-'));
 const chrome = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
   '--window-size=1280,800', `--user-data-dir=${profile}`,
@@ -140,7 +140,7 @@ const check = (name, pass, detail) => {
 
 /* ---------- 1. 首帧：25 个都停在终态 ---------- */
 const s1 = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const ps = [...G.doc.cmds.values()].map((c) => c.transform.progress);
   return {
     cmds: G.doc.stats().cmds,
@@ -157,7 +157,7 @@ check('首帧入场演完后 25 条都落在终态', s1.min === 1 && s1.max === 
 peer.send(JSON.stringify(PATCH2));
 await sleep(180);
 const s2 = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const t = ${JSON.stringify(TARGETS)};
   const moving = [], still = [];
   for (const c of G.doc.cmds.values()) {
@@ -183,7 +183,7 @@ check('过渡引擎同时在跑的正好 5 条', s2.active === 5, s2.active);
 /* ---------- 3. 演完归位 ---------- */
 await sleep(1100);
 const s3 = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const t = ${JSON.stringify(TARGETS)};
   const moving = [];
   for (const c of G.doc.cmds.values()) if (t.includes(Number(c.id.slice(2)))) moving.push(c.transform.progress);
@@ -194,7 +194,7 @@ check('演完之后 5 个都回到终态（p = 1，且不再重绘）',
 
 /* ---------- 4. 屏幕与 SVG 用同一个插值 ---------- */
 const s4 = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   // 手动把 c_0 拨回半程，比较画布与 SVG 用的矩阵
   const c = G.doc.cmds.get('c_0');
   c.transform.from = [1, 0, 0, 1, 0, 0];
@@ -216,7 +216,7 @@ check('SVG 里写的是插值后的矩阵（45° 的一半 ≈ 22.5°）', (() =
 peer.send(JSON.stringify(PATCH3));
 await sleep(200);
 const s5 = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const vis = (id) => G.doc.cmds.get(id).visible;
   G.events.fire('click', {});
   const after = { c0: vis('c_0'), c1: vis('c_1'), c2: vis('c_2'), c3: vis('c_3'), c24: vis('c_24') };
@@ -247,7 +247,7 @@ peer.send(JSON.stringify({
 }));
 await sleep(250);
 const sIntro = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const c = G.doc.cmds.get('c_new');
   return { p: c ? c.transform.progress : null, matrix: c ? c.transform.matrix.slice(0, 2) : null };
 })()`);
@@ -257,7 +257,7 @@ check('新指令第一次出现时从 0 开始演（不是直接跳到终态）'
 /* ---------- 6. restart：让目标的变换从头再演 ---------- */
 // 先把 c_10 摆成"演完了"的状态，再触发 restart；进度是下一帧才写回的，所以要等一帧
 await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.doc.cmds.get('c_10').transform.from = [1, 0, 0, 1, 0, 0];
   G.doc.cmds.get('c_10').transform.matrix = [0.707, 0.707, -0.707, 0.707, 0, 0];
   G.doc.cmds.get('c_10').transform.progress = 1;
@@ -265,7 +265,7 @@ await evaluate(`(() => {
 })()`);
 await sleep(150);
 const s6 = await evaluate(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   return { p0: G.doc.cmds.get('c_10').transform.progress, other: G.doc.cmds.get('c_12').transform.progress };
 })()`);
 check('restart 让目标指令的变换重演（进度归零，非目标不动）', s6.p0 < 0.4 && s6.other === 1, s6);

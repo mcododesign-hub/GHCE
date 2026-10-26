@@ -1,6 +1,6 @@
-﻿# pack-yak.ps1 — 把 GHCE 打成 Yak 包（Rhino PackageManager 可分发）
+﻿# pack-yak.ps1 — 把 Colugo 打成 Yak 包（Rhino PackageManager 可分发）
 #
-#   .\pack-yak.ps1            只打包：产物在 dist\ghce-<版本>-rh8_*_*.yak
+#   .\pack-yak.ps1            只打包：产物在 dist\colugo-<版本>-rh8_*_*.yak
 #   .\pack-yak.ps1 -Push      打包并推送到 yak.rhino3d.com（需要先 yak login）
 #
 # 为什么单独一个脚本：手动拼目录最容易错两件事 —— 版本号和文件名对不上、
@@ -19,23 +19,23 @@ if (-not $rhino) { $rhino = Join-Path $env:ProgramFiles 'Rhino 8\' }
 $yak = Join-Path $rhino 'System\Yak.exe'
 if (-not (Test-Path $yak)) { throw "找不到 Yak.exe：$yak" }
 
-$csproj = Join-Path $gh 'GHCE\GHCE.csproj'
+$csproj = Join-Path $gh 'Colugo\Colugo.csproj'
 $ver = ([xml](Get-Content $csproj -Raw)).Project.PropertyGroup.Version |
     Where-Object { $_ } | Select-Object -First 1
 if (-not $ver) { throw 'csproj 里读不到 <Version>' }
 
-$src = Join-Path $gh 'GHCE\bin\Release\net7.0-windows\GHCE.gha'
+$src = Join-Path $gh 'Colugo\bin\Release\net7.0-windows\Colugo.gha'
 if (-not (Test-Path $src)) {
-    throw "找不到 $src。先编译：cd gh\GHCE; dotnet build -c Release"
+    throw "找不到 $src。先编译：cd gh\Colugo; dotnet build -c Release"
 }
 
-$stage = Join-Path $root 'dist\GHCE'
+$stage = Join-Path $root 'dist\Colugo'
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
-Copy-Item $src (Join-Path $stage 'GHCE.gha')
+Copy-Item $src (Join-Path $stage 'Colugo.gha')
 
 # 试用案例随包分发：仓库根目录有 examples\*.gh 就一起打进去。
-# 它们会被装到 <packages>\GHCE\<版本>\samples\，GH 不会自动加载，需要用户手动打开。
+# 它们会被装到 <packages>\Colugo\<版本>\samples\，GH 不会自动加载，需要用户手动打开。
 $samples = Join-Path $root 'examples'
 if (Test-Path $samples) {
     $ghFiles = Get-ChildItem $samples -Filter *.gh -File
@@ -49,7 +49,7 @@ if (Test-Path $samples) {
 
 $manifest = @"
 ---
-name: GHCE
+name: Colugo
 version: $ver
 authors:
 - mcodo design
@@ -59,7 +59,7 @@ description: >
   entities with state, tracks and morph frames, event-driven variables, and a
   three.js scene. The preview opens in an embedded window inside Rhino, and the
   artwork exports to PNG, SVG, image sequence, video or a standalone HTML file.
-url: https://github.com/mcododesign-hub/GHCE
+url: https://github.com/mcododesign-hub/Colugo
 keywords:
 - grasshopper
 - creative coding

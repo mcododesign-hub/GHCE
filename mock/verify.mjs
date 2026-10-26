@@ -21,7 +21,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const LIVING_FRAMES = 25;
 
 /* ---------- 启动 Chrome ---------- */
-const profile = mkdtempSync(join(tmpdir(), 'ghce-verify-'));
+const profile = mkdtempSync(join(tmpdir(), 'colugo-verify-'));
 const chrome = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--hide-scrollbars', '--mute-audio',
   '--no-first-run', '--no-default-browser-check',
@@ -103,14 +103,14 @@ const shot = async (name) => {
     format: 'png',
     clip: { x: 0, y: 0, width: vp.w, height: vp.h, scale: 1 },
   });
-  const f = join(OUT_DIR, `ghce-${name}.png`);
+  const f = join(OUT_DIR, `colugo-${name}.png`);
   await writeFile(f, Buffer.from(r.data, 'base64'));
   return f;
 };
 
 /* 1. 连接与文档状态 */
 const s1 = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   return { conn: G.client.state, rev: G.doc.rev, ...G.doc.stats(), dpr: G.renderer._dpr,
            canvasW: G.renderer.canvas.width, errs: document.getElementById('errs').textContent,
            hudGone: !document.getElementById('hud'),
@@ -126,7 +126,7 @@ check('backing store 按 DPR 放大', s1.canvasW >= 1440 * 2 - 4, { canvasW: s1.
 
 /* 2. 真像素测量：画布不是空白 */
 const px = await cdp.eval(`(() => {
-  const c = window.GHCE.renderer.canvas;
+  const c = window.Colugo.renderer.canvas;
   const g = c.getContext('2d');
   const d = g.getImageData(0, 0, c.width, c.height).data;
   const seen = new Map();
@@ -148,7 +148,7 @@ console.log('  screenshot:', f1);
 
 /* 3. 增量更新：只有几何变，指令不重传 */
 const s2 = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('mutate');
   await new Promise(r => setTimeout(r, 1600));
   return { rev: G.doc.rev, patches: G.client.metrics.patches, patchMs: +G.client.metrics.lastPatchMs.toFixed(2),
@@ -160,7 +160,7 @@ check('patch 应用耗时可测', s2.patchMs > 0, { ms: s2.patchMs });
 
 /* 4. 500 路径压力 */
 const s3 = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('stress');
   await new Promise(r => setTimeout(r, 2200));
   const t0 = performance.now();
@@ -179,14 +179,14 @@ console.log('  screenshot:', f2);
 
 /* 5. SVG 导出 */
 const svg = await cdp.eval(`(() => {
-  const r = window.GHCE.toSVG(window.GHCE.doc);
+  const r = window.Colugo.toSVG(window.Colugo.doc);
   return { paths: (r.svg.match(/<path/g) || []).length, bytes: r.svg.length, warnings: r.report.warnings.length };
 })()`);
 check('SVG 输出保留矢量路径', svg.paths >= 500, { paths: svg.paths, bytes: svg.bytes });
 
 /* 5.5 两种 PNG 导出模式：带底色 / 透明底 */
 const exp = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   async function sample(blob) {
     const bmp = await createImageBitmap(blob);
     const c = document.createElement('canvas');
@@ -229,7 +229,7 @@ check('无控制台错误 / 未捕获异常', errs.length === 0,
 
 /* 7. 动态对象（阶段 2）：无新 patch 时画面照走；几何更新后状态保留 */
 const ent1 = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('entities');
   await new Promise(r => setTimeout(r, 1800));
   window.__e0 = { rev: G.doc.rev, snap: G.entities.snapshot('e_loop0'), stats: { ...G.entities.stats } };
@@ -237,7 +237,7 @@ const ent1 = await cdp.eval(`(async () => {
 })()`);
 await sleep(1200);
 const ent2 = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   return { rev: G.doc.rev, snap: G.entities.snapshot('e_loop0'), draw: { ...G.renderer.lastDraw }, stats: { ...G.entities.stats } };
 })()`);
 
@@ -248,7 +248,7 @@ check('GH 不再发包时画面仍在推进（rev 不变、age 增长）',
 check('实例沿曲线位移（u 变化）', ent2.snap.us[0] !== ent1.snap.us[0], { before: ent1.snap.us[0], after: ent2.snap.us[0] });
 
 const ent3 = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const before = { rev: G.doc.rev, snap: G.entities.snapshot('e_loop0') };
   G.client.send({ v: '0.1', t: 'cmd', action: 'drift', on: true });
   await new Promise(r => setTimeout(r, 1800));
@@ -263,7 +263,7 @@ check('实体场景单帧绘制 < 16.7ms', ent2.draw.ms < 16.7, { ms: ent2.draw.
 // 形状：GH 发来的是归一化局部坐标的折线。偶数号蓝图带三角形，奇数的没形状（回退方块）。
 // 必须在这里断言 —— 后面切到 living 场景后 entities 里就没有 e_loop* 了。
 const shapes = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const out = {};
   for (const [id, bp] of G.entities.blueprints) {
     out[id] = bp.def.shape
@@ -279,11 +279,11 @@ check('不带 Shape 的蓝图回退成方块（shape = null）', shapes.e_loop1 
 const f3 = await shot('entities');
 console.log('  screenshot:', f3);
 
-await cdp.eval(`window.GHCE.client.send({ v: '0.1', t: 'cmd', action: 'drift', on: false })`);
+await cdp.eval(`window.Colugo.client.send({ v: '0.1', t: 'cmd', action: 'drift', on: false })`);
 
 /* 8. 阶段 3：时钟 / 逐步绘制 / 残影 / 多行为并存 */
 const lv1 = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('living');
   // 等新场景真的到达（rev 归 1），否则读到的是上一轮的残留
   const t0 = performance.now();
@@ -305,7 +305,7 @@ const lv1 = await cdp.eval(`(async () => {
 })()`);
 await sleep(700);
 const lv2 = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   return { reveal: +G.trackAt('c_ln0').reveal.toFixed(3), time: +G.clock.time.toFixed(2) };
 })()`);
 
@@ -317,7 +317,7 @@ check('三条蓝图并存（同一种语义，只差参数）',
 
 /* 8.5 时间轴：全局时长/循环在 Timeline，轨道只声明自己的区间 */
 const tlq = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const hiddenProbe = (() => {
     const c = G.doc.cmds.get('c_ln1');
     const was = c.track.hidden;
@@ -348,7 +348,7 @@ check('同一时刻另一条轨还没开始（多轨错开）',
 check('静默轨道不驱动（矩阵返回 null）', tlq.hiddenMatrix === null, tlq.hiddenMatrix);
 
 const paused = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.clock.pause();
   const t0 = G.clock.time;
   const a0 = G.entities.snapshot('e_slow').ages[0];
@@ -361,7 +361,7 @@ const paused = await cdp.eval(`(async () => {
 check('暂停后时钟与对象同时停住', paused.dt < 1e-6 && paused.dAge < 1e-6, paused);
 
 const resumed = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.clock.play();
   const t0 = G.clock.time;
   await new Promise(r => setTimeout(r, 400));
@@ -374,7 +374,7 @@ console.log('  screenshot:', f4);
 
 /* 9. 时间轨（v0.16）：帧序列由 GH 算一次，浏览器按 Duration/Loop/Ease 播 */
 const tl1 = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('living');
   // 等新场景的快照真的到达（rev 归到 1），否则会读到上一轮的残留值
   const t0 = performance.now();
@@ -402,7 +402,7 @@ const tl1 = await cdp.eval(`(async () => {
 })()`);
 await sleep(900);
 const tl2 = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   return {
     rev: G.doc.rev,
     t: +G.clock.time.toFixed(2),
@@ -430,7 +430,7 @@ check('旋转轨的矩阵随时间变化', JSON.stringify(tl2.rot) !== JSON.stri
 /* 9.1 曲线生长 = 几何截断（不是虚线）：走真实 _paint，按时间量右边界 */
 // 只在临时画布上画这一条指令、并临时摘掉粒子系统 —— 否则粒子和别的行会污染"最右墨迹"。
 const grow = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const W = G.doc.canvas.w, H = G.doc.canvas.h;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -468,7 +468,7 @@ check('生长按弧长截断（真实绘制里右边界随 reveal 单调推进�
 
 /* 10. 分布是确定性的（v0.15 去掉了 seed / vary / 行为预设） */
 const dist = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const s = G.entities.snapshot('e_slow');
   const step = ((s.us[1] - s.us[0]) + 1) % 1;
   return { step: +step.toFixed(4), expect: +(1 / 30).toFixed(4) };
@@ -477,7 +477,7 @@ check('同一蓝图内粒子沿曲线均匀铺开（步长 = 1/Count）',
   Math.abs(dist.step - dist.expect) < 2e-3, dist);
 
 const phase = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const before = G.entities.snapshot('e_slow').us[0];
   G.entities.setPhase('e_slow', 0.5);
   const after = G.entities.snapshot('e_slow').us[0];
@@ -489,7 +489,7 @@ check('写 phase 让整组沿曲线前移（时间就是这么进来的）',
 
 /* 10.1 指针仍然进运行时（交互没坏） */
 const geo = await cdp.eval(`(() => {
-  const r = window.GHCE.renderer.canvas.getBoundingClientRect();
+  const r = window.Colugo.renderer.canvas.getBoundingClientRect();
   return { left: Math.round(r.left), top: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
 })()`);
 const targetX = geo.left + geo.w * 0.75;
@@ -501,7 +501,7 @@ for (let i = 0; i < 4; i++) {
 }
 await sleep(300);
 
-const ptr = await cdp.eval(`(() => window.GHCE.pointer.stats())()`);
+const ptr = await cdp.eval(`(() => window.Colugo.pointer.stats())()`);
 check('鼠标位置进入运行时（页面坐标）', ptr.inside === true, ptr);
 
 const f5 = await shot('living-pointer');
@@ -509,7 +509,7 @@ console.log('  screenshot:', f5);
 
 /* 10.4 按区域擦除（v0.11 的 clear-region，从已废弃的 verify-v011 套件搬过来） */
 const clearReg = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const cv = G.renderer.canvas, ctx = cv.getContext('2d');
   const dpr = cv.width / G.doc.canvas.w;
   G.renderer.draw();
@@ -526,7 +526,7 @@ check('clear-region 只擦指定区域（框内透明、框外保留底色）',
 // 用"时间当自变量"扫一个完整周期，而不是隔 700ms 采两次 —— 后者会撞上正弦谷底，
 // 数值几乎不动，把正确的实现判成 FAIL（v0.16 踩过）。
 const psr = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const tr = G.doc.cmds.get('c_ln2').track;
   // v0.18：一个周期 = 这条轨自己的 [start, end]，不再是轨道自带的 duration
   const s = tr.start, e = tr.end;
@@ -570,7 +570,7 @@ check('矩阵绕指定锚点旋转（竖条出现 / 横条消失）',
 
 /* 10.7 v0.17 交付：PNG 序列 / 独立 HTML / 视频 */
 const seq = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const r = await G.exportPngSequence({
     doc: G.doc, renderer: G.renderer, entities: G.entities, fps: 6, duration: 0.5,
   });
@@ -586,7 +586,7 @@ check('PNG 序列按 duration×fps 出帧并打成合法 zip',
 
 // 独立 HTML 不能只看它"有内容"——真的把它当页面加载，看里面那张画布画不画得出来
 const solo = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const blob = await G.exportStandalone({ doc: G.doc, entities: G.entities, title: 'standalone' });
   const text = await blob.text();
   const url = URL.createObjectURL(blob);
@@ -613,8 +613,8 @@ const solo = await cdp.eval(`(async () => {
     hasPatch: text.indexOf('"ops"') >= 0,
     canvas: !!cv, ink, err,
     bootError: (f.contentWindow && f.contentWindow.__bootError) || null,
-    docStats: (f.contentWindow && f.contentWindow.__GHCE)
-      ? { geoms: f.contentWindow.__GHCE.doc.geoms.size, cmds: f.contentWindow.__GHCE.doc.cmds.size }
+    docStats: (f.contentWindow && f.contentWindow.__Colugo)
+      ? { geoms: f.contentWindow.__Colugo.doc.geoms.size, cmds: f.contentWindow.__Colugo.doc.cmds.size }
       : null,
     cv: cv ? [cv.width, cv.height] : null,
   };
@@ -626,7 +626,7 @@ check('独立 HTML 能离线自己跑起来（iframe 里有画布并画出内容
   solo.canvas && solo.ink > 20 && solo.hasPatch && solo.hasDataModules, solo);
 
 const vid = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const mime = G.pickVideoMime();
   if (!mime) return { mime: null, size: 0, type: '' };
   const r = await G.exportVideo({
@@ -639,7 +639,7 @@ check('视频导出产出可用的 WebM/MP4',
 
 /* 12. v0.19 几何 morph：顶点插值（方 → 圆，非仿射变化） */
 const mo = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('morph');
   // 判据不能用 rev===1：mock 每次切场景都从 1 重新计数，连续切换时条件立刻成立，等于没等。
   // 要等"只有新场景才会有的内容"出现。
@@ -683,7 +683,7 @@ console.log('  screenshot:', f6);
 
 /* 13. v0.23 逐帧驱动：GH 每帧发新矩阵时的直通行为 */
 const lv = await cdp.eval(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('random');
   const t0 = performance.now();
   while (!G.doc.cmds.has('c_tri') && performance.now() - t0 < 4000) {
@@ -704,7 +704,7 @@ check('逐帧驱动时直通，不叠过渡缓动', lv.progress === 1, { progres
 
 // 信号：GH 推定义 → 浏览器求值 → stat 回传。这里验证前半段（定义到达 + 求值随时间变）
 const sig = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const def = G.signals.get('sig_demo');
   if (!def) return { missing: true, ids: [...G.signals.keys()] };
   return {
@@ -728,11 +728,11 @@ console.log('  screenshot:', f7);
  * 这一节要证明的是"不重解 GH 也能变画面"：
  *   点击 → 事件写变量 → 表达式重算属性 → 重绘
  * 全程 doc.rev 不变 —— 一旦 rev 变了，就说明还是 GH 在出图，这条路没成立。 */
-await cdp.eval("window.GHCE.selectScene('binding')");
+await cdp.eval("window.Colugo.selectScene('binding')");
 await sleep(700);
 
 const b0 = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const cmd = G.doc.cmds.get('c_beat');
   const ctx = { t: G.doc.time || 0, vars: G.doc.vars };
   return {
@@ -755,7 +755,7 @@ check('存在时间绑定 → 标记为逐帧重绘', b0.timeBinding === true, b
 /** 数"近白"像素：c_beat 是唯一近白的线（另两条是绿/粉），所以它的粗细直接反映在数量上。
  *  不按坐标取样 —— 画布是等比缩放显示的，页面坐标到缓冲像素的映射不值得再赌一次。 */
 const inkCount = () => cdp.eval(`(() => {
-  const cv = window.GHCE.renderer.canvas;
+  const cv = window.Colugo.renderer.canvas;
   const g = cv.getContext('2d');
   const d = g.getImageData(0, 0, cv.width, cv.height).data;
   let n = 0;
@@ -769,13 +769,13 @@ const ink0 = await inkCount();
 const rev0 = b0.rev;
 
 await cdp.eval(`(() => {
-  const cv = window.GHCE.renderer.canvas;
+  const cv = window.Colugo.renderer.canvas;
   cv.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 10 }));
 })()`);
 await sleep(260);
 
 const b1 = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const cmd = G.doc.cmds.get('c_beat');
   return {
     v: G.doc.vars.get('v_w'),
@@ -791,19 +791,19 @@ check('表达式随之重算出新宽度', Math.abs(b1.w - 7.5) < 1e-6, b1.w);
 check('全程没有触发 GH 求解（rev 不变）', b1.rev === rev0, { before: rev0, after: b1.rev });
 check('像素证据：线真的变粗了', ink1 > ink0 * 1.4, { before: ink0, after: ink1 });
 check('绑定不污染指令本体（cmd.style.width 仍是静态值）',
-  await cdp.eval("window.GHCE.doc.cmds.get('c_beat').style.stroke.width") === 1.5,
-  await cdp.eval("window.GHCE.doc.cmds.get('c_beat').style.stroke.width"));
+  await cdp.eval("window.Colugo.doc.cmds.get('c_beat').style.stroke.width") === 1.5,
+  await cdp.eval("window.Colugo.doc.cmds.get('c_beat').style.stroke.width"));
 
 /* 10.6 色相 / 缩放 / 指针事件（v0.30.1） */
 const hueFx = await cdp.eval(`(() => {
-  const a = window.GHCE.recolor('#EDEBE4', 0.5);
-  const b = window.GHCE.recolor('#EDEBE4', 0.0);
+  const a = window.Colugo.recolor('#EDEBE4', 0.5);
+  const b = window.Colugo.recolor('#EDEBE4', 0.0);
   return { a, b, differs: a !== b, hue180: a.indexOf('180') >= 0 };
 })()`);
 check('色相函数：只换色相、保留明度', hueFx.differs && hueFx.hue180, hueFx);
 
 const ringB = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const c = G.doc.cmds.get('c_ring');
   const at = (t, k) => +G.evalExpr(c.bind[k], { t, vars: G.doc.vars }).toFixed(3);
   return { s0: at(0, 'scale'), s1: at(1, 'scale'), h0: at(0, 'hue'), h1: at(1, 'hue') };
@@ -813,7 +813,7 @@ check('色相绑定随时间循环', Math.abs(ringB.h0 - ringB.h1) > 0.1, ringB)
 
 /** 数绿方块（#10B363）的像素：按下放大最直接的证据 */
 const greenCount = () => cdp.eval(`(() => {
-  const cv = window.GHCE.renderer.canvas;
+  const cv = window.Colugo.renderer.canvas;
   const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
   let n = 0;
   for (let i = 0; i < d.length; i += 4) {
@@ -822,12 +822,12 @@ const greenCount = () => cdp.eval(`(() => {
   return n;
 })()`);
 
-const revHold = await cdp.eval('window.GHCE.doc.rev');
+const revHold = await cdp.eval('window.Colugo.doc.rev');
 const g0 = await greenCount();
-await cdp.eval(`window.GHCE.renderer.canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
+await cdp.eval(`window.Colugo.renderer.canvas.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))`);
 await sleep(240);
 const holdDown = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const c = G.doc.cmds.get('c_hold');
   return { v: G.doc.vars.get('v_hold'), scale: G.evalExpr(c.bind.scale, { t: 0, vars: G.doc.vars }), rev: G.doc.rev };
 })()`);
@@ -837,10 +837,10 @@ check('pointerdown 后缩放表达式为 4', Math.abs(holdDown.scale - 4) < 1e-6
 check('指针事件不触发 GH 求解（rev 不变）', holdDown.rev === revHold, { before: revHold, after: holdDown.rev });
 check('像素证据：方块被放大', g1 > g0 * 1.6, { before: g0, after: g1 });
 
-await cdp.eval(`window.GHCE.renderer.canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))`);
+await cdp.eval(`window.Colugo.renderer.canvas.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))`);
 await sleep(240);
 const holdUp = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const c = G.doc.cmds.get('c_hold');
   return { v: G.doc.vars.get('v_hold'), scale: G.evalExpr(c.bind.scale, { t: 0, vars: G.doc.vars }) };
 })()`);
@@ -855,11 +855,11 @@ console.log('  screenshot:', f85);
  *   1. 500+ 条标记只引用 3 份印章几何 —— patch 体积靠这个守住；
  *   2. 位置与朝向全在 matrix 里，没有把印章坐标烘进几何；
  *   3. 五种画法真的画出五种墨量，而不是"参数不同、画面一样"。 */
-await cdp.eval("window.GHCE.selectScene('marks')");
+await cdp.eval("window.Colugo.selectScene('marks')");
 await sleep(900);
 
 const mk = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const cmds = [...G.doc.cmds.values()];
   const isMark = (c) => /^c_(stipple|nib|hatch|scatter)_/.test(c.id);
   const marks = cmds.filter(isMark);
@@ -892,7 +892,7 @@ check('整帧体积守住 400KB', mk.bytes > 0 && mk.bytes < 400000, mk.bytes);
 
 /** 五条带各数一次墨量：不是"有没有画"，是"五种画法真的不一样" */
 const bands = await cdp.eval(`(() => {
-  const G = window.GHCE, cv = G.renderer.canvas, g = cv.getContext('2d');
+  const G = window.Colugo, cv = G.renderer.canvas, g = cv.getContext('2d');
   const k = cv.width / G.doc.canvas.w;
   const out = [];
   for (const cy of [130, 300, 470, 640, 810]) {
@@ -915,11 +915,11 @@ check('五种画法的墨量至少三档（不是同一张图换个参数）',
 // 回归：从 fade 场景切到普通场景，clearMode 不能残留。
 // 这条是 v0.31 做五种画法时抓到的真 bug —— doc.reset 早先用 Object.assign，
 // 没带的字段会留着上一件作品的设置，而 GH 的 Canvas 电池根本不发 clearMode。
-await cdp.eval("window.GHCE.selectScene('living')");
+await cdp.eval("window.Colugo.selectScene('living')");
 await sleep(500);
-await cdp.eval("window.GHCE.selectScene('marks')");
+await cdp.eval("window.Colugo.selectScene('marks')");
 await sleep(600);
-const clearMode = await cdp.eval("window.GHCE.doc.canvas.clearMode");
+const clearMode = await cdp.eval("window.Colugo.doc.canvas.clearMode");
 check('换作品时画布设置回到默认（fade 不会残留）', clearMode === 'clear', clearMode);
 
 const f86 = await shot('marks');
@@ -933,11 +933,11 @@ console.log('  screenshot:', f86);
  *   3. 销毁按条件发生，残影（留痕）被保留且有上限；
  *   4. 同样的步数重跑，位置逐点相同（确定性）；
  *   5. 全程没有触发 GH 求解（rev 不变）。 */
-await cdp.eval("window.GHCE.selectScene('behavior')");
+await cdp.eval("window.Colugo.selectScene('behavior')");
 await sleep(800);
 
 const sim = await cdp.eval(`(() => {
-  const G = window.GHCE, E = G.entities;
+  const G = window.Colugo, E = G.entities;
   const id = 'e_swarm';
   const snap = () => {
     const s = E.snapshot(id);
@@ -1002,7 +1002,7 @@ check('整个模拟过程没有触发 GH 求解（rev 不变）',
 // 截图前跑 4 秒（轨道已经建立）并显式画一帧：
 // 前面的模拟是同步跑的、不经过 RAF，不主动画就可能截到上一帧。
 await cdp.eval(`(() => {
-  const G = window.GHCE, E = G.entities;
+  const G = window.Colugo, E = G.entities;
   E.restart();
   E.step(G.doc, 240);
   G.renderer.draw();
@@ -1018,11 +1018,11 @@ console.log('  screenshot:', f87);
  *   1. 图片几何真的到了运行时，并且**三条指令共用一份 base64**；
  *   2. 解码完成后画得出来（这是异步的，所以第一帧空白不是 bug）；
  *   3. 裁剪在指令变换之前生效：圆内是图、圆外是底，反相则相反。 */
-await cdp.eval("window.GHCE.selectScene('image')");
+await cdp.eval("window.Colugo.selectScene('image')");
 await sleep(1500);   // 等解码：Image.onload 之后会自己 requestDraw
 
 const imgState = await cdp.eval(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const g = G.doc.geoms.get('g_checker');
   const cmds = [...G.doc.cmds.values()].filter((c) => c.geom === 'g_checker');
   return {
@@ -1048,7 +1048,7 @@ check('裁剪随指令到达，含反相标记',
 
 /** 取页面坐标上的一点，返回像素亮度与最大通道 */
 const pixelAt = (x, y) => cdp.eval(`(() => {
-  const G = window.GHCE, cv = G.renderer.canvas;
+  const G = window.Colugo, cv = G.renderer.canvas;
   const k = cv.width / G.doc.canvas.w;
   const d = cv.getContext('2d').getImageData(Math.round(${x} * k), Math.round(${y} * k), 1, 1).data;
   return { r: d[0], g: d[1], b: d[2], a: d[3] };
@@ -1078,7 +1078,7 @@ check('反相裁剪：模具外部保留', warm(outHole), { a: outHoleA, b: outH
 
 // SVG 导出：图片走 <image>，裁剪走 <clipPath>
 const svgOut = await cdp.eval(`(() => {
-  const r = window.GHCE.toSVG(window.GHCE.doc);
+  const r = window.Colugo.toSVG(window.Colugo.doc);
   return { ok: r.svg.indexOf('<image') >= 0, clip: r.svg.indexOf('<clipPath') >= 0,
            warned: r.report.warnings.length, len: r.svg.length };
 })()`);
@@ -1087,7 +1087,7 @@ check('SVG 导出：图片内嵌、裁剪转 clipPath',
 
 // 独立 HTML 导出：图片必须跟着 doc 一起走，否则导出的作品是空白的
 const docOps = await cdp.eval(`(() => {
-  const snap = window.GHCE.serializeDoc(window.GHCE.doc, window.GHCE.entities);
+  const snap = window.Colugo.serializeDoc(window.Colugo.doc, window.Colugo.entities);
   const ops = snap.patch.ops;
   const img = ops.find((o) => o.op === 'geom.upsert' && o.value && o.value.kind === 'image');
   const cmd = ops.find((o) => o.op === 'cmd.upsert' && o.value && o.value.clip);

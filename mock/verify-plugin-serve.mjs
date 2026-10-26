@@ -12,13 +12,13 @@ import { writeFile } from 'node:fs/promises';
 import WebSocket from 'ws';
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8799';
-const PAGE = `${BASE}/?ws=${BASE.replace('http', 'ws')}/ghce`;
+const PAGE = `${BASE}/?ws=${BASE.replace('http', 'ws')}/colugo`;
 const CDP_PORT = Number(process.env.CDP_PORT || 9335);
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const profile = mkdtempSync(join(tmpdir(), 'ghce-serve-'));
+const profile = mkdtempSync(join(tmpdir(), 'colugo-serve-'));
 const chrome = spawn(CHROME, [
   '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-first-run',
   '--window-size=1280,800', `--user-data-dir=${profile}`,
@@ -60,7 +60,7 @@ await send('Page.navigate', { url: PAGE });
 await sleep(3000);
 
 const first = await ev(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   return { title: document.title, conn: G.client.state, rev: G.doc.rev, ...G.doc.stats(),
            drawn: G.renderer.lastDraw.drawn, skipped: G.renderer.lastDraw.skipped,
            canvasW: G.renderer.canvas.width,
@@ -68,12 +68,12 @@ const first = await ev(`(() => {
            hudGone: !document.getElementById('hud') };
 })()`);
 await sleep(1600);
-const second = await ev('({ rev: window.GHCE.doc.rev })');
+const second = await ev('({ rev: window.Colugo.doc.rev })');
 
 const results = [];
 const check = (n, p, d) => { results.push(p); console.log(`${p ? 'PASS' : 'FAIL'}  ${n}  → ${JSON.stringify(d)}`); };
 
-check('页面由插件内嵌资源提供', first.title === 'GHCE Runtime · V0.1', first.title);
+check('页面由插件内嵌资源提供', first.title === 'Colugo Runtime · V0.1', first.title);
 check('WS 连上插件自己的桥', first.conn === 'open', first.conn);
 check('60 条路径全部入库', first.geoms === 60 && first.cmds === 60, { geoms: first.geoms, cmds: first.cmds });
 check('全部被绘制，无跳过', first.drawn === 60 && first.skipped === 0, { drawn: first.drawn, skipped: first.skipped });
@@ -84,7 +84,7 @@ const shot = await send('Page.captureScreenshot', {
   format: 'png',
   clip: { x: 0, y: 0, width: 1280, height: 800, scale: 1 },
 });
-const out = join(tmpdir(), 'ghce-plugin-serve.png');
+const out = join(tmpdir(), 'colugo-plugin-serve.png');
 await writeFile(out, Buffer.from(shot.data, 'base64'));
 console.log('  screenshot:', out);
 

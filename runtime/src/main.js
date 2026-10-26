@@ -17,7 +17,7 @@ import {
   trackDuration, pickVideoMime, videoExt, serializeDoc,
 } from './exporter.js';
 
-const WS_URL = new URLSearchParams(location.search).get('ws') || 'ws://127.0.0.1:8777/ghce';
+const WS_URL = new URLSearchParams(location.search).get('ws') || 'ws://127.0.0.1:8777/colugo';
 
 const doc = new Doc();
 // 信号定义表：GH 每帧推一次（约 100 字节），这里按 id 覆盖。
@@ -279,17 +279,17 @@ function download(blob, name) {
 
 document.getElementById('btn-png').addEventListener('click', async () => {
   const blob = await renderer.exportPNG(2);
-  if (blob) download(blob, `ghce-rev${doc.rev}.png`);
+  if (blob) download(blob, `colugo-rev${doc.rev}.png`);
 });
 document.getElementById('btn-png-alpha').addEventListener('click', async () => {
   // 不填背景色：只有几何本身，alpha 通道保留，可以直接叠到别的画面上
   const blob = await renderer.exportPNG(2, { transparent: true });
-  if (blob) download(blob, `ghce-rev${doc.rev}-alpha.png`);
+  if (blob) download(blob, `colugo-rev${doc.rev}-alpha.png`);
 });
 document.getElementById('btn-svg').addEventListener('click', () => {
   const { svg, report } = toSVG(doc);
   if (report.warnings.length) pushErr({ code: 'SVG_DEGRADED', msg: report.warnings.slice(0, 3).join(' | ') });
-  download(new Blob([svg], { type: 'image/svg+xml' }), `ghce-rev${doc.rev}.svg`);
+  download(new Blob([svg], { type: 'image/svg+xml' }), `colugo-rev${doc.rev}.svg`);
 });
 
 /* ---------- v0.17 交付：PNG 序列 / 独立 HTML / 视频 ---------- */
@@ -337,14 +337,14 @@ document.getElementById('btn-seq')?.addEventListener('click', () => withExport('
     doc, renderer, entities, fps, duration: dur,
     onProgress: (i, n) => expProgress(`PNG 序列 ${i}/${n} · ${fps}fps · ${dur}s`),
   });
-  download(r.blob, `ghce-seq-${fps}fps-${r.frames}f.zip`);
+  download(r.blob, `colugo-seq-${fps}fps-${r.frames}f.zip`);
   expDone(`PNG 序列完成（${r.frames} 帧）`, r.blob.size);
   return r;
 }));
 
 document.getElementById('btn-html')?.addEventListener('click', () => withExport('独立 HTML', async () => {
-  const blob = await exportStandalone({ doc, entities, title: `GHCE rev${doc.rev}` });
-  download(blob, `ghce-rev${doc.rev}.html`);
+  const blob = await exportStandalone({ doc, entities, title: `Colugo rev${doc.rev}` });
+  download(blob, `colugo-rev${doc.rev}.html`);
   expDone('独立 HTML 完成（离线可看）', blob.size);
   return blob;
 }));
@@ -357,7 +357,7 @@ document.getElementById('btn-video')?.addEventListener('click', () => withExport
     doc, renderer, clock, entities, fps, duration: dur,
     onProgress: (t, d) => expProgress(`录制 ${t.toFixed(1)}/${d}s · ${videoExt(mime)}`),
   });
-  download(r.blob, `ghce-rev${doc.rev}.${r.ext}`);
+  download(r.blob, `colugo-rev${doc.rev}.${r.ext}`);
   expDone(`视频完成（${r.ext} · ${dur}s）`, r.blob.size);
   return r;
 }));
@@ -397,7 +397,7 @@ requestAnimationFrame(loop);
 // 图片是异步解码的：load 完成时请求一次重绘，否则首帧空白会一直空白下去
 setImageReadyHandler(() => requestDraw());
 
-window.GHCE = {
+window.Colugo = {
   doc, renderer, scene3d, client, entities, clock, pointer, tweens, events, toSVG, selectScene, requestDraw, resolveMorph,
   signals, signalValue, evalExpr, recolor, serializeDoc,
 

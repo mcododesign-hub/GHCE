@@ -7,7 +7,7 @@
     <NoWarn>NETSDK1138</NoWarn>
   </PropertyGroup>
   <PropertyGroup>
-    <!-- 与 GHCE.csproj 同一套探测：换机器不用改文件 -->
+    <!-- 与 Colugo.csproj 同一套探测：换机器不用改文件 -->
     <_RhinoC1 Condition="'$(RhinoDir)' == '' AND Exists('C:\Program Files\Rhino 8\System\netcore\RhinoCommon.dll')">C:\Program Files\Rhino 8</_RhinoC1>
     <_RhinoC2 Condition="'$(RhinoDir)' == '' AND Exists('D:\Program Files\Rhino 8\System\netcore\RhinoCommon.dll')">D:\Program Files\Rhino 8</_RhinoC2>
     <_RhinoC3 Condition="'$(RhinoDir)' == '' AND Exists('E:\Program Files\Rhino 8\System\netcore\RhinoCommon.dll')">E:\Program Files\Rhino 8</_RhinoC3>
@@ -16,9 +16,9 @@
     <RhinoDir Condition="'$(RhinoDir)' == ''">$(_RhinoC1)$(_RhinoC2)$(_RhinoC3)$(_RhinoC4)$(_RhinoC5)</RhinoDir>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Private=false：不把 GHCE.dll 复制到探针输出目录，
-         运行时仍由 Program.cs 的 LoadFrom 加载 gh/GHCE/bin 里那份"要发布的东西"。 -->
-    <ProjectReference Include="..\GHCE\GHCE.csproj">
+    <!-- Private=false：不把 Colugo.dll 复制到探针输出目录，
+         运行时仍由 Program.cs 的 LoadFrom 加载 gh/Colugo/bin 里那份"要发布的东西"。 -->
+    <ProjectReference Include="..\Colugo\Colugo.csproj">
       <Private>false</Private>
     </ProjectReference>
   </ItemGroup>

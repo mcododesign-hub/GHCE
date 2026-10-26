@@ -95,7 +95,7 @@
 `Image` 读文件、按 `Max Size` 等比降采样、编码成 data URL；同一路径+尺寸缓存，不重复读盘。
 `Draw Image` 只负责放哪、多透明 —— 缩放归 `Clip` 之外的变换（接 `Transform` 也行）。
 
-新数据类型 `GHCE Image`（第 14 个），归 `GHCE / Data`，带图标。
+新数据类型 `Colugo Image`（第 14 个），归 `Colugo / Data`，带图标。
 
 **验收**：`Image → Draw Image → Render Output` 出图；改 X/Y 图片跟着动；改 `Max Size` 后 patch 里的 `src` 长度跟着变。
 

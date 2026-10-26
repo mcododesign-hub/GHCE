@@ -50,7 +50,7 @@
 | **P0-B ✅ 已交付（0.31.0）** | `Brush` / `Mark Along Path` / `Style Map`（`Draw Marks` 并入 Mark Along Path：输出就是 DrawCommand，再拆一只只是多一次端口跳转） | M–L | 同一组曲线五种静态画法，patch 体积有上限 —— **已进 89 项断言：404 标记 / 3 份几何 / 整帧 200 KB** |
 | **P1-A ✅ 已交付（0.32.0）** | `Read State` / `Write State` / `Spawn` / `Destroy`（`Condition` 不单独做：比较用 `Runtime Math` 的 9/10，分支用 `Runtime Select`，条件本身就是一个 0/1 表达式） | L | 自定义弹簧粒子（非预设行为）—— **已进 10 项断言：72→168 人口阶梯、销毁留痕、确定性** |
 | **P1-B ✅ 已交付（0.33.0）** | `Text`（GH 转曲线）、`Image` / `Draw Image`、`Clip`（指令级裁剪） | M | 含文字/图片/裁剪/笔触的海报 —— **已进 19 项断言：图片只进一次 patch / 圆裁 / 反相裁 / SVG clipPath** |
-| **P1-C 📐 计划已校准（0.34 起）** | TSL 材质图 + 后处理 | L | Mesh → Shader → Bloom；任务书见根目录 `GHCE_TSL_Shader.md`，校准说明见 `docs/tsl-plan-calibration.md` |
+| **P1-C 📐 计划已校准（0.34 起）** | TSL 材质图 + 后处理 | L | Mesh → Shader → Bloom；任务书见根目录 `Colugo_TSL_Shader.md`，校准说明见 `docs/tsl-plan-calibration.md` |
 
 **为什么不是先 Mark**：Mark 会引入新数据类型和一批新电池，而表达式层现在只有两个属性可绑 —— 先绑完再上 Mark，
 Mark 的“样式映射”就能直接复用 Bind，不用为它再造一套驱动方式。这是顺序问题，不是取舍问题。

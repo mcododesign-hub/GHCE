@@ -1,5 +1,5 @@
 import WebSocket from 'ws';
-const ws = new WebSocket('ws://127.0.0.1:8788/ghce');
+const ws = new WebSocket('ws://127.0.0.1:8788/colugo');
 const seen = [];
 ws.on('open', () => {
   ws.send(JSON.stringify({ v:'0.1', t:'hello', client:'grab', caps:{} }));

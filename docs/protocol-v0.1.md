@@ -1,7 +1,7 @@
-# GHCE 通信协议 V0.1
+# Colugo 通信协议 V0.1
 
 **状态：草案，对应里程碑 M0**
-**传输：WebSocket 文本帧 · `ws://127.0.0.1:8777/ghce` · UTF-8 JSON**
+**传输：WebSocket 文本帧 · `ws://127.0.0.1:8777/colugo` · UTF-8 JSON**
 
 设计前提来自任务书 1.4：GH 负责定义，浏览器负责执行。所以协议里没有"让浏览器算几何"的入口——所有几何都已是**页面坐标**，运行时不做投影、不做投影矩阵推导。
 
@@ -39,7 +39,7 @@
 ### hello / welcome
 
 ```json
-{ "v":"0.1", "t":"hello", "client":"ghce-runtime", "caps":{
+{ "v":"0.1", "t":"hello", "client":"colugo-runtime", "caps":{
     "backends":["canvas2d","svg"], "dpr":2, "ws":true, "webgl2":false } }
 ```
 

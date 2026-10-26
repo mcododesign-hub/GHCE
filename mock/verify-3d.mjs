@@ -6,8 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 
-const PAGE = process.env.PAGE || 'http://127.0.0.1:5293/?ws=ws://127.0.0.1:8909/ghce';
-const OUT = process.env.OUT || join(tmpdir(), 'ghce-3d.png');
+const PAGE = process.env.PAGE || 'http://127.0.0.1:5293/?ws=ws://127.0.0.1:8909/colugo';
+const OUT = process.env.OUT || join(tmpdir(), 'colugo-3d.png');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let pass = 0;
@@ -17,7 +17,7 @@ const check = (name, ok, detail) => {
   else { fail++; console.log(`  FAIL  ${name}  ${JSON.stringify(detail)}`); }
 };
 
-const profile = mkdtempSync(join(tmpdir(), 'ghce3d-'));
+const profile = mkdtempSync(join(tmpdir(), 'colugo3d-'));
 const chrome = spawn('C:/Program Files/Google/Chrome/Application/chrome.exe', [
   '--headless=new', '--window-size=1280,820', '--no-first-run', '--no-proxy-server',
   '--enable-unsafe-swiftshader',
@@ -66,7 +66,7 @@ await sleep(2500);
 
 // 切到 3D 场景，等 three 加载完（2.3 MB，慢一点）
 const r1 = await ev(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   if (!G) return { noApp: true };
   G.selectScene('scene3d');
   const t0 = performance.now();
@@ -87,7 +87,7 @@ check('线段数正确（双螺旋 2×219）', r1.segments === 438, { segments: 
 
 // 相机：自动取景必须真的把物体框住 —— 检查相机到包围盒中心的距离与半径同量级
 const cam = await ev(`(() => {
-  const S = window.GHCE.scene3d;
+  const S = window.Colugo.scene3d;
   const c = S.camera;
   if (!c) return { noCamera: true };
   // 场景里所有对象的世界包围盒
@@ -110,13 +110,13 @@ check('相机 up 轴是 Z（Rhino 的约定）', cam.upZ === 1, { upZ: cam.upZ }
 
 // 画布缓冲尺寸：renderer 建立前收到的 resize 必须被应用，否则 300×150 被拉伸到全屏
 const size = await ev(`(() => {
-  const c = window.GHCE.scene3d.canvas;
+  const c = window.Colugo.scene3d.canvas;
   return {
     bufW: c.width, bufH: c.height,
     cssW: c.clientWidth, cssH: c.clientHeight,
     dpr: devicePixelRatio,
-    backend: window.GHCE.scene3d.backend,
-    objects: window.GHCE.scene3d.objects.size,
+    backend: window.Colugo.scene3d.backend,
+    objects: window.Colugo.scene3d.objects.size,
   };
 })()`);
 const dprCap = Math.min(size.dpr, 2);
@@ -132,7 +132,7 @@ await send('Emulation.setDeviceMetricsOverride', {
 });
 await sleep(900);
 const hi = await ev(`(() => {
-  const S = window.GHCE.scene3d;
+  const S = window.Colugo.scene3d;
   const c = S.canvas;
   S.render(0.016);            // 推一帧，让 _syncSize 有机会执行
   return { bufW: c.width, bufH: c.height, cssW: c.clientWidth, dpr: devicePixelRatio, tracked: S._dpr };
@@ -145,7 +145,7 @@ await sleep(400);
 // 帧率与耗时
 await sleep(1200);
 const perf = await ev(`(() => {
-  const s = window.GHCE.scene3d.stats();
+  const s = window.Colugo.scene3d.stats();
   return { frames: s.frames, ms: s.ms };
 })()`);
 check('场景至少出了一帧', perf.frames >= 1, perf);
@@ -160,7 +160,7 @@ console.log('  screenshot:', OUT);
 
 // 2D 是否仍然可用（共存）：切回去，确认 2D 对象还在
 const back = await ev(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   G.selectScene('static');
   const t0 = performance.now();
   while (!G.doc.cmds.size && performance.now() - t0 < 4000) await new Promise(r => setTimeout(r, 50));

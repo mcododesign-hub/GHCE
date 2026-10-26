@@ -1,6 +1,6 @@
-# 迁移与续作说明（HANDOFF）
+﻿# 迁移与续作说明（HANDOFF）
 
-打包时间：2026-10-22 23:30 · 插件版本 **GHCE 0.11.0** · 19 只电池
+打包时间：2026-10-26 15:10 · 插件版本 **Colugo 0.33.0** · 50 只电池 · 147 项断言
 
 这个包是一份**可继续开发的完整工作副本**，不是只读快照。到新机器上按下面顺序做，
 最短路径是"不编译，直接装预编译的 `.gha`"。
@@ -16,7 +16,7 @@ Grasshopper 当创作前端，浏览器当执行环境。GH 里的曲线/样式/
 
 | 部分 | 位置 | 作用 |
 |---|---|---|
-| GH 插件 | `gh/GHCE`（C# / net7.0-windows） | 17 只电池，编译并推送，内嵌预览窗（WebView2） |
+| GH 插件 | `gh/Colugo`（C# / net7.0-windows） | 50 只电池，编译并推送，内嵌预览窗（WebView2） |
 | 浏览器运行时 | `runtime/`（原生 JS，零依赖） | Canvas 2D 渲染、实体系统、时间线、导出 |
 | 模拟桥 + 验收 | `mock/`（Node，仅依赖 `ws`） | 不开 Rhino 也能演示；CDP 驱动的真浏览器断言 |
 
@@ -36,10 +36,10 @@ cd "<解压位置>\gh"
 .\install.ps1
 ```
 
-看到 `已安装 GHCE.gha  <字节数> bytes  md5 ...` 就成了（脚本会自己比对源与目标的 md5）。然后：
+看到 `已安装 Colugo.gha  <字节数> bytes  md5 ...` 就成了（脚本会自己比对源与目标的 md5）。然后：
 
 ```
-打开 Rhino → 命令 Grasshopper → 左侧标签页找 GHCE
+打开 Rhino → 命令 Grasshopper → 左侧标签页找 Colugo
 ```
 
 **不需要 node，也不需要那台机器上有 dotnet**——`install.ps1` 只是复制文件。
@@ -62,8 +62,8 @@ dotnet --list-sdks
 日常用的两条命令：
 
 ```powershell
-cd "<解压位置>\gh\GHCE"
-dotnet build -c Release          # 产物 bin/Release/net7.0-windows/GHCE.gha
+cd "<解压位置>\gh\Colugo"
+dotnet build -c Release          # 产物 bin/Release/net7.0-windows/Colugo.gha
 
 cd ..\probe
 dotnet build -c Release
@@ -81,6 +81,17 @@ dotnet build -c Release -p:RhinoDir="F:\Rhino 8"
 
 **运行时页面是嵌入资源**：改了 `runtime/` 里的 js/html 之后必须重新
 `dotnet build`（不是重启 Rhino）才会进 `.gha`。
+
+**探针跑不起来、报 "must install .NET 7"**：编译只需要 SDK，**运行**需要 net7.0 运行时。
+本机只有 .NET 10 运行时时，直接跑 `probe.exe` 会被拒。加环境变量绕过：
+
+```powershell
+$env:DOTNET_ROLL_FORWARD='LatestMajor'
+dotnet bin\Release\net7.0-windows\probe.dll
+```
+
+`dotnet run` 不会把 `probe.runtimeconfig.json` 里的 `7.0.0` 抬上去，所以这条路要用
+`dotnet <dll>` 而不是 `dotnet run`。末尾看到 `RESULT: PASS` 才算过。
 
 ---
 
@@ -107,12 +118,13 @@ runtime/
 mock/
   dev.mjs                    一条命令起运行时页面 + 模拟桥
   mock-gh.mjs                模拟 GH 侧（5 个演示场景）
-  verify.mjs                 CDP 真浏览器断言（38 项）
+  run-verify.mjs             一条命令：起服务 → 跑验收 → 退出即回收端口
+  verify.mjs                 CDP 真浏览器断言（109 项）
   replay-csharp.mjs          把 C# 真实产出的 patch 灌进运行时
 gh/
   install.ps1                安装 + 校验
   build.md                   构建细节、每个坑、每个已知边界
-  GHCE/                      插件源码（含预编译产物 bin/）
+  Colugo/                      插件源码（含预编译产物 bin/）
   probe/                     加载冒烟 + 数值断言
 ```
 
@@ -134,11 +146,11 @@ node dev.mjs
 
 # 终端 2：跑断言（会启动真 Chrome，无头）
 cd "<解压位置>\mock"
-$env:PAGE='http://127.0.0.1:5273/?ws=ws://127.0.0.1:8877/ghce'
+$env:PAGE='http://127.0.0.1:5273/?ws=ws://127.0.0.1:8877/colugo'
 node verify.mjs
 ```
 
-末尾应为 `38/38 passed`。截图落在 `%TEMP%\ghce-*.png`。
+末尾应为 `109/109 passed`。截图落在 `%TEMP%\colugo-*.png`。
 
 **为什么换端口**：8777 是插件的默认端口，如果 Rhino 正开着，插件已经占住了它。
 上面这套用 5273/8877 避开。
@@ -162,8 +174,14 @@ dotnet run -c Release
   Transform 对象；要合成得自己写 C#/Python 或组矩阵。变换走到页面会做一次
   `P·M·P⁻¹`（相机共轭），这部分**已数值验证**。
 - **运行时状态回传是单向快照**：GH 能读到帧率/对象数/指针，但还不能反过来改定义。
-- **未做**：Oscillator、Event Trigger、Selective Clear、阶段 4（画笔/字体/图像）、
-  阶段 5（3D/Shader）。别按任务书目录找，看 `docs/stage-plan.md`。
+- **未做**：图层级 alpha mask（指令级 `Clip` 已有）、Shader IR 与 TSL 节点编译、后处理、
+  GPU Compute。别按任务书目录找，看 `docs/stage-plan.md` 与 `docs/tsl-plan-calibration.md`。
+- **文字已转曲线**：`Text` 电池输出的是 Rhino `Curve`，运行时没有字体概念。
+  改字号 = 重新求解，不是每帧变量。缺字体时报警回退 Arial，字形会完全不同。
+- **图片走 base64 进 patch**：单张 4MB / 整帧 12MB 是硬顶。图片有指纹缓存，不随每帧重发；
+  同路径 + 同 `Max Size` 的图只读一次盘。
+- **`Clip` 的模具是页面坐标**，在指令 `transform` 之前落剪。反过来写会让裁剪框跟着图转，
+  表现是"裁歪了"。一个指令只能有一个 clip，后接的覆盖前一个。
 - **`Draw Path` 有 10 个输入**，超过"≤6"的约定。用户明确要求保持原样，不要擅自拆。
 
 ---
@@ -174,18 +192,28 @@ dotnet run -c Release
 |---|---|---|
 | 改了代码、重启 Rhino 没变化 | Rhino 锁着 `.gha`，`cp` 静默失败 | 一律走 `install.ps1`，它会查进程并校验 md5 |
 | `dotnet` 报 No SDK | PATH 里的是**只有运行时**的那份 | `dotnet --list-sdks` 自检；本机 SDK 在 `C:\Users\<用户>\.dotnet` |
-| GH 里整个 GHCE 标签页都不出现 | 某个类型的字段引用了找不到的程序集（如 WebView2），`GetTypes()` 整体抛异常 | 已用 `[ModuleInitializer]` 挂 `AssemblyResolve`；新增第三方引用必须配这个钩子 |
+| GH 里整个 Colugo 标签页都不出现 | 某个类型的字段引用了找不到的程序集（如 WebView2），`GetTypes()` 整体抛异常 | 已用 `[ModuleInitializer]` 挂 `AssemblyResolve`；新增第三方引用必须配这个钩子 |
 | 参数类型显示棋盘格 | 参数的图标不能覆写 `Icon`（恒 null），走 `Internal_Icon_24x24` | 已在 `Icons.cs` 里按参数单独画 |
 | 切换场景后测量值像是"时间倒流" | `selectScene` 走 WS，快照还没到就开始采样 | 等可判定标志（如 `rev === 1`）再采样 |
 | 预览窗连不上 | 端口自动避让后，页面里 WS 地址还是 8777 | 统一用 `BridgeServer.PreviewUrl`（带 `?ws=`） |
+| 探针报"重复的 GUID" | 新写的电池随手用了 `c1–c4`，与 `RandomComponents` 撞车 | 新文件写 GUID 前先 `grep -o "0000000000.." ` 看已占后缀；撞了会让旧 `.gh` 认错电池 |
+| `dotnet run` 报 "must install .NET 7" | 编译只需要 SDK，**运行**需要 net7.0 运行时 | `DOTNET_ROLL_FORWARD=LatestMajor` + `dotnet <dll>`，详见第 2 节 |
+| 像素断言偶发失败、颜色像被"稀释" | 采样点压在测试图的格缝/边缘上，被插值混色 | 换算到素材的稳定区（格心、色块中心），别沿用缩小前的坐标 |
 
 ---
 
 ## 7. 下一步建议
 
-阶段 0–3 的 P0 项已闭环。接下来优先级（详见 `docs/stage-plan.md`）：
+0.33.0 把 P1-B 关掉了。路线图上 **P0-A / P0-B / P1-A / P1-B 全部交付，只剩 P1-C（Shader）**。
 
-1. 在 GH 里用一个**真实定义**把 13 只电池串起来跑一遍 —— 目前所有验证都是
-   "运行时 + 协议 + C# 单点"，还没有一个端到端作品。
-2. 若需要"相机框住整个动画过程"，给 Path Input 加可选 `Camera` 输入（端口 6 → 7）。
-3. 阶段 3 尾巴：Oscillator / Event Trigger / Selective Clear。
+1. **端到端作品仍然没有** —— 这条从 0.11 挂到现在。所有验证都是"运行时 + 协议 + C# 单点"，
+   50 只电池里没有任何一个真实 `.gh` 把它们串起来跑过。这是当前最大的验证盲区，也是唯一能
+   暴露"电池之间对不上"的方式（端口类型对、协议字段对，但连起来语义不对）。
+2. **0.34 = P1-C 的 S1**：Shader IR Schema + 9 只新电池 + 首个 golden image。
+   为什么是 9 只而不是任务书说的 14 只、三个待拍板的决策，都写在 `docs/tsl-plan-calibration.md`。
+3. **GitHub 仓库还叫 GHCE**。本地 manifest 与文档已指向 `mcododesign-hub/Colugo`，
+   仓库没改名之前那个地址是 404。改完 GitHub 会自动重定向旧地址，本地 remote 也要跟上：
+
+   ```powershell
+   git remote set-url origin git@github.com:mcododesign-hub/Colugo.git
+   ```

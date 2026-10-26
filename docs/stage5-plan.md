@@ -15,7 +15,7 @@
 
 | 你的描述 | 实现 | 验收 |
 |---|---|---|
-| 「独立模块，之前是 drawing 模块」 | GH 分类 `GHCE / 3D`，与 `Drawing` 平级，5 颗电池 | 标签页里出现 `3D` 分组 |
+| 「独立模块，之前是 drawing 模块」 | GH 分类 `Colugo / 3D`，与 `Drawing` 平级，5 颗电池 | 标签页里出现 `3D` 分组 |
 | 「读取 Rhino mesh 类型」 | `Mesh Input`：Mesh / SubD / Brep → 三角化 | probe `in=2 out=2` |
 | 「独立 3D camera」 | `Camera 3D`：位置 / 目标 / FOV / 投影 / 缩放 | probe `in=5 out=1` |
 | 「不设 camera 默认 boundingbox 居中」 | 运行时按包围球自动取景，`up = Z` | 实测 `dist/radius = 1.35`，相机在包围球外 |
@@ -58,7 +58,7 @@ Rhino Mesh ─► Mesh Input ─► Transform 3D ─► Draw 3D ─► Scene 3D 
 | C# → 运行时协议回放 | `replay-3d.mjs` **6/6**（mesh / 材质 / 点径 / 矩阵平移 / 对象数） |
 | 二维回归 | `verify.mjs` **64/64**（没碰坏任何东西） |
 | 插件编译 | 0 错误 0 警告 |
-| 已安装产物 | `GHCE 0.25.0.0`，probe `RESULT: PASS` |
+| 已安装产物 | `Colugo 0.25.0.0`，probe `RESULT: PASS` |
 
 ### 两个真 bug（都是运行时才暴露的）
 
@@ -145,9 +145,9 @@ Rhino Mesh ─► Mesh Input ─► Transform 3D ─► Draw 3D ─► Scene 3D 
 
 | 做什么 | 验收 |
 |---|---|
-| three.js 三个 build 文件作为嵌入资源进 `.gha` | `unzip -l GHCE.gha` 能看到三个 js |
+| three.js 三个 build 文件作为嵌入资源进 `.gha` | `unzip -l Colugo.gha` 能看到三个 js |
 | `BridgeServer` 提供 `/vendor/*`，带 `Content-Encoding: gzip` | `curl -I` 返回 200 + gzip |
-| 运行时加 `layer-3d` + 一个 `Scene3D` 模块（渲染循环、resize、dispose） | 页面加载后 `window.GHCE.scene3d` 存在 |
+| 运行时加 `layer-3d` + 一个 `Scene3D` 模块（渲染循环、resize、dispose） | 页面加载后 `window.Colugo.scene3d` 存在 |
 | `Scene` 电池：背景色 + 内置一个测试立方体（不接任何几何） | 预览窗里出现一个 TSL 着色的立方体 |
 | HUD 显示后端类型 | 显示 `3d webgl2` 或 `3d webgpu` |
 
@@ -157,7 +157,7 @@ Rhino Mesh ─► Mesh Input ─► Transform 3D ─► Draw 3D ─► Scene 3D 
 
 | 做什么 | 验收 |
 |---|---|
-| `Mesh` 电池：Rhino `Mesh` / `SubD` / `Brep`（自动转 Mesh）→ `GHCE Mesh` | 端口 3 个以内 |
+| `Mesh` 电池：Rhino `Mesh` / `SubD` / `Brep`（自动转 Mesh）→ `Colugo Mesh` | 端口 3 个以内 |
 | 协议 `mesh.upsert`：`positions` / `indices` / `normals` / `uvs`，f32 + base64 | 与现有 `geom` 同一套编码 |
 | 运行时：`MeshDef → BufferGeometry`，指纹不变则复用 | 拖顶点时只重传变化的网格 |
 | 增量策略：几何指纹（顶点哈希）不变就跳过 | 拖动相机不产生任何 patch |

@@ -1,4 +1,4 @@
-﻿# install.ps1 — 安装 / 更新 GHCE 到 Grasshopper 库目录，并校验真的装上了
+﻿# install.ps1 — 安装 / 更新 Colugo 到 Grasshopper 库目录，并校验真的装上了
 #
 #   .\install.ps1           安全模式：发现 Rhino 在运行就停下来说明原因
 #   .\install.ps1 -Force    结束 Rhino 进程后再装（会丢未保存内容，慎用）
@@ -10,13 +10,13 @@ param([switch]$Force)
 
 $ErrorActionPreference = 'Stop'
 
-$src = Join-Path $PSScriptRoot 'GHCE\bin\Release\net7.0-windows\GHCE.gha'
+$src = Join-Path $PSScriptRoot 'Colugo\bin\Release\net7.0-windows\Colugo.gha'
 $dstDir = Join-Path $env:APPDATA 'Grasshopper\Libraries'
-$dst = Join-Path $dstDir 'GHCE.gha'
+$dst = Join-Path $dstDir 'Colugo.gha'
 
 if (-not (Test-Path $src)) {
     Write-Host "找不到 $src" -ForegroundColor Red
-    Write-Host "先编译：cd gh\GHCE; dotnet build -c Release" -ForegroundColor Yellow
+    Write-Host "先编译：cd gh\Colugo; dotnet build -c Release" -ForegroundColor Yellow
     exit 1
 }
 
@@ -24,7 +24,7 @@ $rhino = Get-Process -Name Rhino -ErrorAction SilentlyContinue
 if ($rhino) {
     $ids = ($rhino | Select-Object -ExpandProperty Id) -join ', '
     if (-not $Force) {
-        Write-Host "Rhino 正在运行（PID: $ids），它锁着 GHCE.gha，安装一定失败。" -ForegroundColor Yellow
+        Write-Host "Rhino 正在运行（PID: $ids），它锁着 Colugo.gha，安装一定失败。" -ForegroundColor Yellow
         Write-Host "关掉所有 Rhino 窗口后重跑本脚本。" -ForegroundColor Yellow
         Write-Host "确实要强装就加 -Force（会结束 Rhino，未保存内容会丢）。" -ForegroundColor DarkYellow
         exit 2
@@ -46,6 +46,6 @@ if ($h1 -ne $h2) {
     exit 3
 }
 
-Write-Host "已安装 GHCE.gha  $len bytes  md5 $($h1.Substring(0,12))" -ForegroundColor Green
+Write-Host "已安装 Colugo.gha  $len bytes  md5 $($h1.Substring(0,12))" -ForegroundColor Green
 Write-Host "位置：$dst"
-Write-Host "下一步：打开 Rhino → 输入 Grasshopper → 看 GHCE 标签页"
+Write-Host "下一步：打开 Rhino → 输入 Grasshopper → 看 Colugo 标签页"

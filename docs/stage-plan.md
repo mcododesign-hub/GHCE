@@ -30,7 +30,7 @@
 
 ### 唯一没验的
 
-GH 界面里的端到端联调（GH 求解 → WS → 浏览器更新）。C# 已装到 `%APPDATA%\Grasshopper\Libraries\GHCE.gha`，等你开 GH 试一次。
+GH 界面里的端到端联调（GH 求解 → WS → 浏览器更新）。C# 已装到 `%APPDATA%\Grasshopper\Libraries\Colugo.gha`，等你开 GH 试一次。
 
 ---
 
@@ -72,7 +72,7 @@ GH 界面里的端到端联调（GH 求解 → WS → 浏览器更新）。C# �
 | — | **改几何后实例状态保留** | ✅ | 几何漂移 rev 1→9，age 5.80→7.61，未被重置 |
 | — | 固定步长 | ✅ | 1/60 累加，单帧最多追 8 步 |
 | — | 多个 Entity 共享同一份几何资源 | ⚠️ | 协议允许（多个蓝图指向同一 `geom`），未做引用计数与释放 |
-| — | 运行时状态读取 | ⚠️ | 只能 `GHCE.entities.snapshot(id)` 在控制台看，未回传 GH |
+| — | 运行时状态读取 | ⚠️ | 只能 `Colugo.entities.snapshot(id)` 在控制台看，未回传 GH |
 | — | GH 电池（`Entity Blueprint` / `Entity Look`） | ✅ v0.15 | Blueprint 5 入 / Look 8 入（含 `Shape` 单条曲线 + `Width`） |
 | — | `State Variable` / `Behavior Graph` 电池 | ❌ v0.15 | 不做。行为只剩 `follow-curve`，蓝图第一个口就是 `Path` |
 
@@ -141,7 +141,7 @@ Halftone / Image Sample / 纹理与笔触分层等。**当前判定：暂缓。*
 | A | **独立 HTML** | ✅ v0.17 | `exportStandalone()`：把依赖树递归抓下来、按拓扑序内联成 `data:` 模块 URL，文档状态压成一次 `doc.reset` 全量 op。**存成文件用 `file://` 打开即可播放**，不需要服务器 |
 | A | **WebM / MP4** | ✅ v0.17 | `exportVideo()`：`canvas.captureStream(fps)` + `MediaRecorder`，按 1× 播一遍录制（MediaRecorder 的时间戳来自墙钟，硬塞帧会得到快进视频）。本机 `isTypeSupported` 命中 `video/webm;codecs=vp9` |
 | B | 导出参数（fps / 时长） | ✅ v0.17 | HUD 两个数字输入；时长默认跟随最长轨道 |
-| C | 交付到仓库 | ✅ v0.17 | `github.com/mcododesign-hub/GHCE` |
+| C | 交付到仓库 | ✅ v0.17 | `github.com/mcododesign-hub/Colugo` |
 
 **验收**：`mock/verify.mjs` 49/49。其中三条是"真产物"级别的：
 - PNG 序列 → zip 头 `504b0304`，3 帧 / 492 KB

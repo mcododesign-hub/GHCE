@@ -235,13 +235,13 @@ try {
   });
 
   // 给"这个文件到底跑起来没有"留一个可断言的点（也方便用户在控制台里玩）
-  window.__GHCE = { doc, renderer, clock, entities, res };
+  window.__Colugo = { doc, renderer, clock, entities, res };
   requestAnimationFrame(loop);
 } catch (e) {
   window.__bootError = (e && e.stack) || String(e);
   const pre = document.createElement('pre');
   pre.style.cssText = 'position:fixed;inset:16px;color:#FF5252;font-size:12px;white-space:pre-wrap;z-index:9';
-  pre.textContent = 'GHCE 播放器启动失败：\\n' + window.__bootError;
+  pre.textContent = 'Colugo 播放器启动失败：\\n' + window.__bootError;
   document.body.appendChild(pre);
 }
 `;
@@ -261,7 +261,7 @@ body.bare #hint{opacity:0}
 
 /** 把当前作品压成一个单文件 HTML（运行时内联 + 文档内联，离线可看） */
 export async function exportStandalone(opts) {
-  const { doc, entities, title = 'GHCE' } = opts;
+  const { doc, entities, title = 'Colugo' } = opts;
   const here = new URL('./', import.meta.url).href;
   const E = {
     doc: new URL('./doc.js', here).href,

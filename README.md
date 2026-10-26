@@ -1,8 +1,9 @@
-# GHCE · Grasshopper Creative Coding Engine
+# Colugo · Grasshopper Creative Coding Engine
 
 把 Grasshopper 当**可视化编程前端**，浏览器当**执行环境**：GH 只负责定义作品，浏览器负责绘画、动画、状态。
 
-任务书见 `Grasshopper Creative Coding Engine.md`。本仓库是它的阶段性产出，当前 **v0.17.0（16 只电池）**，M0 待人工验收。
+任务书见 `Grasshopper Creative Coding Engine.md`。本仓库是它的阶段性产出，当前 **v0.33.0（50 只电池 / 147 项断言）**，
+阶段 0–4 已闭环；阶段 5 的 Shader 有任务书与校准，待开工（`docs/tsl-plan-calibration.md`）。
 
 先读这份再动手：**`docs/motion-model.md`** —— cmds 是什么、几何与变换的关系、非仿射运动（场映射/拓扑变化）该怎么表达。
 
@@ -16,6 +17,7 @@
 静态：Curve → Path Input → Render Output
 动态：Curve → Entity Blueprint → Entity Look → Render Output
 动画：Curve → Path Input → Draw Path → Track → Render Output
+平面：Text / Image → Draw Image → Clip（可选）→ Render Output
 ```
 
 `Render Output` 的 `Preview` 打开就会弹一个内嵌 WebView2 窗口（运行时页面编在 `.gha` 里，不需要 node、不需要另开浏览器）。拖动曲线，窗口里的图形实时跟着变。
@@ -30,7 +32,7 @@ npm install        # 只一个依赖：ws
 npm run dev        # 5173 运行时页面 · 8777 模拟 GH 桥
 
 # 另开一个终端（必须显式把页面指到 mock 桥，否则会连到你开着的真 Rhino）
-RUNTIME=http://127.0.0.1:5173 PAGE="http://127.0.0.1:5173/index.html?ws=ws://127.0.0.1:8788/ghce" \
+RUNTIME=http://127.0.0.1:5173 PAGE="http://127.0.0.1:5173/index.html?ws=ws://127.0.0.1:8788/colugo" \
   node mock/verify.mjs              # 真 Chrome 跑 49 项断言 + 出截图
 node mock/replay-csharp.mjs       # 把 C# 产出的 patch 灌进运行时（15 项）
 node mock/verify-plugin-serve.mjs # 插件自供页面 + 真浏览器渲染（7 项）
@@ -42,8 +44,8 @@ node mock/verify-v012.mjs         # 逐指令 Xform 各自演 + 事件只影响�
 GH 插件：
 
 ```bash
-cd gh/GHCE
-dotnet build -c Release          # 需要真正的 SDK（不是只有运行时），产出 GHCE.gha
+cd gh/Colugo
+dotnet build -c Release          # 需要真正的 SDK（不是只有运行时），产出 Colugo.gha
 cd ..
 .\install.ps1                    # 复制 + 校验 md5；Rhino 在跑会停下来说原因
 ```
@@ -80,7 +82,7 @@ GH **只发一次**帧序列，浏览器按 `clock.time` 插值到 60fps —— 
 
 播放控制是四个**互相独立**的动作（任务书 3E）：`暂停/播放`、`重置时间`、`重启对象`、`清屏`。空格暂停、`0` 重置时间。
 
-`Living` 场景里鼠标移过去只会记录指针位置（`GHCE.pointer`）——**没有**"吸附"这类行为预设：
+`Living` 场景里鼠标移过去只会记录指针位置（`Colugo.pointer`）——**没有**"吸附"这类行为预设：
 粒子只有一种运动（沿曲线），要不一样的感觉就改 `Speed` / `Lifetime` / `Phase`，或者多挂一条蓝图。
 
 **没有 Rhino 也能验。** `mock/mock-gh.mjs` 是模拟桥，它按 `PatchBuilder` 的语义做事（算全量状态 → 与上次发出的状态 diff → 只发变化的 op），所以协议问题在这里就能暴露。
@@ -113,7 +115,7 @@ mock/
   verify-plugin-serve.mjs  插件自供页面 + 真浏览器渲染（7 项）
 gh/
   build.md                 构建 / 安装 / 编译期踩的坑 / 已知边界
-  GHCE/                    Grasshopper 插件源码（net7.0-windows）
+  Colugo/                    Grasshopper 插件源码（net7.0-windows）
     Bridge/                桥：一个端口同时做 HTTP 静态页 + WS
     Ui/PreviewWindow.cs    WPF + WebView2 预览窗
     Icons.cs               四个电池图标（GDI+ 现画）

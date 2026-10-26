@@ -8,12 +8,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
 
-const JSON_PATH = process.env.PATCH3D || join(tmpdir(), 'ghce-csharp-patch3d.json');
+const JSON_PATH = process.env.PATCH3D || join(tmpdir(), 'colugo-csharp-patch3d.json');
 const PORT = Number(process.env.REPLAY_PORT || 8791);
 const CDP_PORT = Number(process.env.CDP_PORT || 9336);
 const CHROME = process.env.CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const PAGE = `${process.env.RUNTIME || 'http://127.0.0.1:5293/'}?ws=ws://127.0.0.1:${PORT}/ghce`;
-const OUT = process.env.OUT || join(tmpdir(), 'ghce-replay3d.png');
+const PAGE = `${process.env.RUNTIME || 'http://127.0.0.1:5293/'}?ws=ws://127.0.0.1:${PORT}/colugo`;
+const OUT = process.env.OUT || join(tmpdir(), 'colugo-replay3d.png');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const patch = await readFile(JSON_PATH, 'utf8');
@@ -25,7 +25,7 @@ const check = (name, ok, detail) => {
 };
 
 /* 极简桥：连接即发一帧 */
-const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT, path: '/ghce' });
+const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT, path: '/colugo' });
 wss.on('connection', (ws) => {
   ws.send(JSON.stringify({ v: '0.1', t: 'welcome', doc: 'csharp-replay-3d' }));
   ws.send(patch);
@@ -36,7 +36,7 @@ wss.on('connection', (ws) => {
 });
 
 /* CDP */
-const profile = mkdtempSync(join(tmpdir(), 'ghce-r3-'));
+const profile = mkdtempSync(join(tmpdir(), 'colugo-r3-'));
 const chrome = spawn(CHROME, [
   '--headless=new', '--hide-scrollbars', '--no-first-run', '--no-proxy-server',
   '--enable-unsafe-swiftshader', '--window-size=900,700',
@@ -73,10 +73,10 @@ const ev = async (expr) => {
 await send('Runtime.enable');
 await send('Page.enable');
 await send('Page.navigate', { url: PAGE });
-await sleep(1800);   // 等 main.js 把 window.GHCE 挂上
+await sleep(1800);   // 等 main.js 把 window.Colugo 挂上
 
 const got = await ev(`(async () => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   if (!G) return { noApp: true };
   const t0 = performance.now();
   while (performance.now() - t0 < 15000) {

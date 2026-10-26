@@ -19,7 +19,7 @@ process.env.RUNTIME_PORT ||= '5173';
 
 await import('./dev.mjs');
 
-const page = process.env.PAGE || `http://127.0.0.1:${process.env.RUNTIME_PORT}/?ws=ws://127.0.0.1:${process.env.PORT}/ghce`;
+const page = process.env.PAGE || `http://127.0.0.1:${process.env.RUNTIME_PORT}/?ws=ws://127.0.0.1:${process.env.PORT}/colugo`;
 
 // 等两个端口真的能连上，再启动验收：serve 与 mock 的 listen 不是同步完成的
 const waitPort = async (url, ms = 8000) => {

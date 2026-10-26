@@ -12,9 +12,9 @@ beginShape(); vertex(...); vertex(...); endShape();
 popMatrix();
 ```
 
-GHCE 里同一件事被拆成一条 `cmd`：
+Colugo 里同一件事被拆成一条 `cmd`：
 
-| Processing 里 | GHCE 里 | 谁给的 |
+| Processing 里 | Colugo 里 | 谁给的 |
 |---|---|---|
 | `stroke() / fill()` | `cmd.style` | `Stroke Style` / `Fill Style` 电池 |
 | `pushMatrix / translate / rotate / scale` | `cmd.transform` | `Transform` 电池（每条指令一个矩阵） |
@@ -84,7 +84,7 @@ for (int i = 0; i < pts.length; i++) {
 }
 ```
 
-GHCE 里**不要**在浏览器里写这个公式 —— 浏览器不该知道你作品的具体算法。改成本地算好、只传结果：
+Colugo 里**不要**在浏览器里写这个公式 —— 浏览器不该知道你作品的具体算法。改成本地算好、只传结果：
 
 ```
 Path Input → (PDeform? 点缓冲) → [原生电池：每个点算一个偏移向量]

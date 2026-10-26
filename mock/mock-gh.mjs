@@ -6,7 +6,7 @@
 import { WebSocketServer } from 'ws';
 
 const PORT = Number(process.env.PORT || 8777);
-const PATH = '/ghce';
+const PATH = '/colugo';
 
 /* ---------------- 几何工具 ---------------- */
 
@@ -1224,7 +1224,7 @@ const wss = new WebSocketServer({ host: '127.0.0.1', port: PORT, path: PATH });
 wss.on('connection', (ws, req) => {
   const s = new Session(ws);
   console.log(`[mock-gh] client connected ${req.socket.remoteAddress}`);
-  s._send({ t: 'welcome', sessionId: Math.random().toString(36).slice(2, 8), doc: 'mock-ghce.gh', rev: 0, mock: true });
+  s._send({ t: 'welcome', sessionId: Math.random().toString(36).slice(2, 8), doc: 'mock-colugo.gh', rev: 0, mock: true });
   s.load(process.env.SCENE || 'static');
 
   ws.on('message', (raw) => {

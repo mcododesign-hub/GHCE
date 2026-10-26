@@ -1,21 +1,21 @@
-# GHCE 开发进度报告
+# Colugo 开发进度报告
 
-**Grasshopper Creative Coding Engine** — 在 Rhino / Grasshopper 里创作，在浏览器里实时执行
+**Colugo**（Grasshopper Creative Coding Engine）— 在 Rhino / Grasshopper 里创作，在浏览器里实时执行
 
 | 项 | 值 |
 |---|---|
-| 版本 | **GHCE 0.32.1** |
-| 报告日期 | 2026-10-23 |
-| 代码仓库 | `github.com/mcododesign-hub/GHCE` |
+| 版本 | **Colugo 0.33.0** |
+| 报告日期 | 2026-10-26 |
+| 代码仓库 | `github.com/mcododesign-hub/Colugo` |
 | 技术形态 | Rhino 插件（`.gha`）+ 内嵌浏览器预览窗 + 独立 Web 运行时 |
-| 规模 | C# 8,117 行 / 运行时 JS 3,947 行 / 验证脚本 3,171 行 |
-| 交付物 | 46 只电池、13 个数据类型、59 个 GUID、协议 V0.1 |
+| 规模 | C# 10,189 行 / 运行时 JS 4,388 行 / 验证脚本 3,886 行 |
+| 交付物 | 50 只电池、14 个数据类型、63 个 GUID、协议 V0.1、**147 项断言** |
 
 ---
 
 ## 0. 摘要
 
-GHCE 把 Grasshopper 当成一个**可视化代码编辑器**：几何在 GH 里算，样式和时间在 GH 里编排，最终编译成一份增量指令流，推给浏览器实时渲染。
+Colugo 把 Grasshopper 当成一个**可视化代码编辑器**：几何在 GH 里算，样式和时间在 GH 里编排，最终编译成一份增量指令流，推给浏览器实时渲染。
 
 | 能力域 | 状态 | 说明 |
 |---|---|---|
@@ -24,8 +24,8 @@ GHCE 把 Grasshopper 当成一个**可视化代码编辑器**：几何在 GH 里
 | 阶段 2 动态对象 | 已完成 | 蓝图 + 外观两段式，确定性分布 + 沿曲线运动，拖尾/淡出 |
 | 阶段 3 动画与交互 | 已完成 | 全局时间轴 + 轨道 + 任意参数帧序列 + 事件绑定 |
 | 阶段 3+ 运行时表达式 | 已完成（最小闭环） | 事件写变量 → 表达式每帧求值 → 属性；不重解 GH |
-| 阶段 4 高级绘图 | 未开始 | 画笔、字体、图像、平面设计系统 |
-| 阶段 5 三维 | 部分完成 | Mesh / 点云 / 线框 / 相机 / 光照 / 材质预设已通；Shader 类型、TSL 节点、后处理未开始 |
+| 阶段 4 高级绘图 | 已完成（0.33） | 画笔抽象在 0.31 的 Mark；文字转曲线、图片几何、指令级裁剪在 0.33 |
+| 阶段 5 三维 | 部分完成 | Mesh / 点云 / 线框 / 相机 / 光照已通，五种绘制模式**本来就是 NodeMaterial**；缺 Shader IR 与 TSL 节点编译、后处理 —— 见 `docs/tsl-plan-calibration.md` |
 | 阶段 6 发布封装 | 未开始 | 已具备运行时导出能力，尚未做作品包与播放器 |
 | 阶段 7 AI / MCP | 未开始 | — |
 
@@ -41,7 +41,7 @@ GHCE 把 Grasshopper 当成一个**可视化代码编辑器**：几何在 GH 里
 
 ```
 ┌─ Rhino / Grasshopper ─────────────────────────────────────────┐
-│  GHCE 电池组：几何 → 样式 → 时间 → 三维                        │
+│  Colugo 电池组：几何 → 样式 → 时间 → 三维                        │
 │  Path Input / Draw Path / Track / Draw 3D …                   │
 └───────────────────────┬───────────────────────────────────────┘
                         │  GH 求解（参数变化才触发）
@@ -91,7 +91,7 @@ GHCE 把 Grasshopper 当成一个**可视化代码编辑器**：几何在 GH 里
 | `Render Output` | Canvas, Commands, Entities, Enabled, Preview, Scene | Status, Url |
 
 - **弹窗即预览**：`Render Output` 首次求解时启动内嵌桥，自动弹出预览窗，行为对齐 Processing 的播放键；不占端口失败（8777–8788 自动避让），不依赖外部进程。
-- **同一端口双用**：HTTP 提供页面与资源，`/ghce` 提供 WebSocket，`Url` 输出可直接在外部浏览器打开同一画面。
+- **同一端口双用**：HTTP 提供页面与资源，`/colugo` 提供 WebSocket，`Url` 输出可直接在外部浏览器打开同一画面。
 - **画布参数**：逻辑尺寸、背景色（可透明）、DPR（上限 2）。运行时按 DPR 分配物理像素，四档视口实测无裁切、无横向溢出。
 - **清屏模式**：协议层已支持 `clear`（每帧清空）/ `fade`（叠半透明底色做残影）/ `none`；当前 `Canvas` 电池尚未暴露该项，运行时按默认值执行。
 - **画面优先**：运行时默认只有画面 —— 没有常驻面板、没有播放按钮，画布铺满窗口、不留边距。
@@ -132,7 +132,7 @@ Curve → Path Input → Mark Along Path → Style Map → Stroke Style → Rend
 
 ### 2.3 动画系统
 
-GHCE 的动画模型是**一条全局时间轴 + 若干条轨道 + 可插值的帧序列**，与剪辑软件同构：
+Colugo 的动画模型是**一条全局时间轴 + 若干条轨道 + 可插值的帧序列**，与剪辑软件同构：
 
 | 电池 | 输入 | 输出 | 作用 |
 |---|---|---|---|
@@ -302,7 +302,7 @@ WebSocket + JSON，`{v, t, seq, ts, ...}` 封帧；核心消息是 `patch`（一
 | **Input**（3） | Interaction, Event Trigger, Runtime Info |
 | **Output**（2） | Canvas, Render Output |
 
-另有 **13 个数据类型**（Canvas / Camera / Paths / Commands / Entities / Signal / Track / Events / Expression / Meshes / Commands 3D / Camera 3D / Scene），统一归在 `GHCE / Data` 分类下，全部带图标。
+另有 **13 个数据类型**（Canvas / Camera / Paths / Commands / Entities / Signal / Track / Events / Expression / Meshes / Commands 3D / Camera 3D / Scene），统一归在 `Colugo / Data` 分类下，全部带图标。
 
 **设计约束**：单只电池输入端控制在 6 个以内（`Draw Path` 因暴露完整描边/填充参数为 10 个，已识别为待收敛项）。
 

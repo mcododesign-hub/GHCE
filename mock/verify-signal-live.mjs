@@ -9,7 +9,7 @@ import { join } from 'node:path';
 const BASE = process.env.BASE || 'http://127.0.0.1:8788/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const profile = mkdtempSync(join(tmpdir(), 'ghce-sig-'));
+const profile = mkdtempSync(join(tmpdir(), 'colugo-sig-'));
 const chrome = spawn('C:/Program Files/Google/Chrome/Application/chrome.exe', [
   '--headless=new', '--disable-gpu', '--window-size=1200,800', '--no-first-run',
   `--user-data-dir=${profile}`, '--remote-debugging-port=9555', 'about:blank',
@@ -53,7 +53,7 @@ await send('Page.navigate', { url: BASE });
 await sleep(2500);
 
 const state = await ev(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   if (!G) return { noApp: true, title: document.title };
   return {
     conn: G.client.state,
@@ -68,7 +68,7 @@ console.log(JSON.stringify(state, null, 1));
 
 // stat 里到底带了什么：直接复算运行时用的同一个函数
 const snap = await ev(`(() => {
-  const G = window.GHCE;
+  const G = window.Colugo;
   const t = 1.234;
   const out = {};
   for (const [id, d] of G.signals) out[id] = +G.signalValue(d, t).toFixed(4);

@@ -25,15 +25,15 @@ class Probe
         return candidates[0];   // 找不到也返回一个，让后面的 FileNotFound 里带出路径
     }
 
-    // 可用 GHCE_BIN 指向别处，比如真正安装到 Libraries 的那份，用来验"要发布的产物"而不是构建输出。
+    // 可用 Colugo_BIN 指向别处，比如真正安装到 Libraries 的那份，用来验"要发布的产物"而不是构建输出。
     // 缺省值从探针自己的输出目录反推 gh/，不再依赖项目所在盘符。
-    static readonly string BIN = Environment.GetEnvironmentVariable("GHCE_BIN")
+    static readonly string BIN = Environment.GetEnvironmentVariable("Colugo_BIN")
         ?? System.IO.Path.GetFullPath(System.IO.Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "GHCE", "bin", "Release", "net7.0-windows"));
+            AppContext.BaseDirectory, "..", "..", "..", "..", "Colugo", "bin", "Release", "net7.0-windows"));
 
-    /// <summary>构建输出里叫 GHCE.dll，装到 Libraries 里的叫 GHCE.gha；两种都得能读。</summary>
+    /// <summary>构建输出里叫 Colugo.dll，装到 Libraries 里的叫 Colugo.gha；两种都得能读。</summary>
     static string ArtifactPath() =>
-        System.IO.File.Exists(BIN + @"\GHCE.dll") ? BIN + @"\GHCE.dll" : BIN + @"\GHCE.gha";
+        System.IO.File.Exists(BIN + @"\Colugo.dll") ? BIN + @"\Colugo.dll" : BIN + @"\Colugo.gha";
 
     static Assembly Resolve(object sender, ResolveEventArgs args)
     {
@@ -43,7 +43,7 @@ class Probe
             "RhinoCommon" => RH + @"\System\netcore\RhinoCommon.dll",
             "Grasshopper" => RH + @"\Plug-ins\Grasshopper\Grasshopper.dll",
             "GH_IO" => RH + @"\Plug-ins\Grasshopper\GH_IO.dll",
-            "GHCE" => ArtifactPath(),
+            "Colugo" => ArtifactPath(),
             _ => null
         };
         return path != null ? Assembly.LoadFrom(path) : null;
@@ -141,14 +141,14 @@ class Probe
 
         try
         {
-            // 构建输出里叫 GHCE.dll，装到 Libraries 里的叫 GHCE.gha，两种都要能读
+            // 构建输出里叫 Colugo.dll，装到 Libraries 里的叫 Colugo.gha，两种都要能读
             var dllPath = ArtifactPath();
             Console.WriteLine($"artifact: {dllPath}");
             var asm = Assembly.LoadFrom(dllPath);
             Console.WriteLine($"loaded: {asm.GetName().Name} {asm.GetName().Version}");
             Console.WriteLine($"runtime: {Environment.Version}");
 
-            var infra = asm.GetType("GHCE.GHCEInfo");
+            var infra = asm.GetType("Colugo.ColugoInfo");
             if (infra != null)
             {
                 var info = (GH_AssemblyInfo)Activator.CreateInstance(infra);
@@ -286,7 +286,7 @@ class Probe
                 using (var g = System.Drawing.Graphics.FromImage(sheet))
                 {
                     // 背景跟着主题走，否则对照图看不出"浅色主题下能不能看清"
-                    bool lightSheet = Environment.GetEnvironmentVariable("GHCE_ICON_THEME") == "light";
+                    bool lightSheet = Environment.GetEnvironmentVariable("Colugo_ICON_THEME") == "light";
                     g.Clear(lightSheet
                         ? System.Drawing.Color.FromArgb(0xF3, 0xF3, 0xF6)
                         : System.Drawing.Color.FromArgb(0x0B, 0x0B, 0x0F));
@@ -306,12 +306,12 @@ class Probe
                         }
                     }
                     // 不再写死盘符：从产物目录上溯 5 级就是仓库根。
-                    // GHCE_BIN 指向别处（如 Libraries 目录）时，落回临时目录，绝不能因此让探针失败。
+                    // Colugo_BIN 指向别处（如 Libraries 目录）时，落回临时目录，绝不能因此让探针失败。
                     var root = System.IO.Path.GetFullPath(System.IO.Path.Combine(BIN, "..", "..", "..", "..", ".."));
                     var shotsDir = System.IO.Path.Combine(root, "docs", "shots");
                     var outPath = System.IO.Directory.Exists(shotsDir)
                         ? System.IO.Path.Combine(shotsDir, "icons-preview.png")
-                        : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-icons-preview.png");
+                        : System.IO.Path.Combine(System.IO.Path.GetTempPath(), "colugo-icons-preview.png");
                     sheet.Save(outPath, System.Drawing.Imaging.ImageFormat.Png);
                     Console.WriteLine($"  icons sheet: {outPath}");
                 }
@@ -323,9 +323,9 @@ class Probe
             }
 
             // 自定义 Param / Goo 往返
-            var paramType = asm.GetType("GHCE.Types.Param_GHCE_Path");
-            var gooType = asm.GetType("GHCE.Types.GHCE_Path");
-            var defType = asm.GetType("GHCE.Types.PathDef");
+            var paramType = asm.GetType("Colugo.Types.Param_Colugo_Path");
+            var gooType = asm.GetType("Colugo.Types.Colugo_Path");
+            var defType = asm.GetType("Colugo.Types.PathDef");
             var param = (IGH_Param)Activator.CreateInstance(paramType);
             var def = Activator.CreateInstance(defType);
             defType.GetField("Id").SetValue(def, "g_test");
@@ -334,7 +334,7 @@ class Probe
             Console.WriteLine($"  goo: valid={goo.IsValid} str={goo} type={goo.TypeName}");
 
             // Path → Draw Command 的隐式转换（用户在 Render Output 里直接接 Path 依赖这条）
-            var cmdGooType = asm.GetType("GHCE.Types.GHCE_Command");
+            var cmdGooType = asm.GetType("Colugo.Types.Colugo_Command");
             var cmdGoo = (IGH_Goo)Activator.CreateInstance(cmdGooType);
             var castOk = cmdGoo.CastFrom(goo);
             Console.WriteLine($"  cast Path→Command: ok={castOk} valid={cmdGoo.IsValid} str={cmdGoo}");
@@ -345,7 +345,7 @@ class Probe
 
             // ---------- 变换数学 P·M·P⁻¹（纯数值，刻意不碰 Rhino 类型）----------
             // 这条是本轮的核心断言：世界里的旋转，在页面上必须绕"该点映射后的位置"转。
-            var trType = asm.GetType("GHCE.Components.TransformComponent");
+            var trType = asm.GetType("Colugo.Components.TransformComponent");
             var cp = trType?.GetMethod("ComposePageMatrix",
                 BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
             if (cp == null)
@@ -387,7 +387,7 @@ class Probe
             // 这是 v0.10 把投影从 Path Input 抽成相机之后必须钉住的东西：
             // 拟合比例、中心对齐、Y 翻转、固定缩放，四条都是"错了就整张图偏掉"的量。
             {
-                var camType = asm.GetType("GHCE.Types.CameraMath");
+                var camType = asm.GetType("Colugo.Types.CameraMath");
                 var fitM = camType.GetMethod("Fit");
                 var toPageM = camType.GetMethod("ToPage");
 
@@ -431,33 +431,33 @@ class Probe
             fail += TestMarks();
 
             // PatchBuilder 首帧 / 次帧
-            var pbType = asm.GetType("GHCE.Bridge.PatchBuilder");
+            var pbType = asm.GetType("Colugo.Bridge.PatchBuilder");
             var pb = Activator.CreateInstance(pbType);
-            var canvasDef = Activator.CreateInstance(asm.GetType("GHCE.Types.CanvasDef"));
-            var cmdDef = Activator.CreateInstance(asm.GetType("GHCE.Types.CommandDef"));
-            var cmdType = asm.GetType("GHCE.Types.CommandDef");
+            var canvasDef = Activator.CreateInstance(asm.GetType("Colugo.Types.CanvasDef"));
+            var cmdDef = Activator.CreateInstance(asm.GetType("Colugo.Types.CommandDef"));
+            var cmdType = asm.GetType("Colugo.Types.CommandDef");
             cmdType.GetField("Id").SetValue(cmdDef, "c_test");
             cmdType.GetField("GeomId").SetValue(cmdDef, "g_test");
             cmdType.GetField("Path").SetValue(cmdDef, def);
             cmdType.GetField("Layer").SetValue(cmdDef, "main");
 
             // 显式图层定义（Layer 电池）：顺序 / 不透明度 / 混合模式必须原样进协议
-            var layerType = asm.GetType("GHCE.Types.LayerDef");
+            var layerType = asm.GetType("Colugo.Types.LayerDef");
             var layerDef = Activator.CreateInstance(layerType);
             layerType.GetField("Name").SetValue(layerDef, "main");
             layerType.GetField("Order").SetValue(layerDef, 42.0);
             layerType.GetField("Opacity").SetValue(layerDef, 0.5);
             layerType.GetField("Blend").SetValue(layerDef, "multiply");
             cmdType.GetField("LayerDef").SetValue(cmdDef, layerDef);
-            var stroke = Activator.CreateInstance(asm.GetType("GHCE.Types.StrokeDef"));
-            asm.GetType("GHCE.Types.StrokeDef").GetField("Dash").SetValue(stroke, new double[] { 4, 3 });
+            var stroke = Activator.CreateInstance(asm.GetType("Colugo.Types.StrokeDef"));
+            asm.GetType("Colugo.Types.StrokeDef").GetField("Dash").SetValue(stroke, new double[] { 4, 3 });
             cmdType.GetField("Stroke").SetValue(cmdDef, stroke);
-            var fill = Activator.CreateInstance(asm.GetType("GHCE.Types.FillDef"));
-            asm.GetType("GHCE.Types.FillDef").GetField("Color").SetValue(fill, "#112233");
+            var fill = Activator.CreateInstance(asm.GetType("Colugo.Types.FillDef"));
+            asm.GetType("Colugo.Types.FillDef").GetField("Color").SetValue(fill, "#112233");
             cmdType.GetField("Fill").SetValue(cmdDef, fill);
 
             // 给指令挂一条时间轨（v0.18）：帧序列由 GH 算一次，浏览器按全局时间轴播
-            var trackType = asm.GetType("GHCE.Types.TrackDef");
+            var trackType = asm.GetType("Colugo.Types.TrackDef");
             var track = Activator.CreateInstance(trackType);
             // 两帧 identity 与绕 (100,100) 转 90° 的页面矩阵
             trackType.GetField("N").SetValue(track, 2);
@@ -475,7 +475,7 @@ class Probe
             trackType.GetField("EaseY").SetValue(track, new double[] { 0, 0.75, 1 });
             cmdType.GetField("Track").SetValue(cmdDef, track);
 
-            var tlType = asm.GetType("GHCE.Types.TimelineDef");
+            var tlType = asm.GetType("Colugo.Types.TimelineDef");
             var tlDef = Activator.CreateInstance(tlType);
             tlType.GetField("Duration").SetValue(tlDef, 6.0);
             tlType.GetField("Loop").SetValue(tlDef, true);
@@ -485,7 +485,7 @@ class Probe
             cmdType.GetField("Matrix").SetValue(cmdDef, new double[] { 0, -1, 1, 0, 10, -20 });
             // 变换进度（v0.11）：0.5 = 从原位长到一半，浏览器按 TRS 分解插值
             cmdType.GetField("Progress").SetValue(cmdDef, 0.5);
-            var gooCmd = Activator.CreateInstance(asm.GetType("GHCE.Types.GHCE_Command"), cmdDef);
+            var gooCmd = Activator.CreateInstance(asm.GetType("Colugo.Types.Colugo_Command"), cmdDef);
 
             var build = pbType.GetMethod("Build");
             var listType = typeof(System.Collections.Generic.List<>).MakeGenericType(gooCmd.GetType());
@@ -511,12 +511,12 @@ class Probe
             }
 
             // 蓝图：用已有的 PathDef 造一个实体定义
-            var entType = asm.GetType("GHCE.Types.EntityDef");
+            var entType = asm.GetType("Colugo.Types.EntityDef");
             var entDef = Activator.CreateInstance(entType);
             entType.GetField("Id").SetValue(entDef, "e_test");
             entType.GetField("Path").SetValue(entDef, def);
             entType.GetField("Count").SetValue(entDef, 50);
-            var entGooCtor = asm.GetType("GHCE.Types.GHCE_Entity").GetConstructor(new[] { entType });
+            var entGooCtor = asm.GetType("Colugo.Types.Colugo_Entity").GetConstructor(new[] { entType });
             var entGoo = (IGH_Goo)entGooCtor.Invoke(new[] { entDef });
             Console.WriteLine($"  entity: valid={entGoo.IsValid} str={entGoo}");
 
@@ -525,7 +525,7 @@ class Probe
             entList.Add(entGoo);
 
             // 事件触发（v0.12）：事件挂在**指令上**，Targets 指明作用于哪几条
-            var evtType = asm.GetType("GHCE.Types.EventDef");
+            var evtType = asm.GetType("Colugo.Types.EventDef");
             var evtDef = Activator.CreateInstance(evtType);
             evtType.GetField("Id").SetValue(evtDef, "ev_test");
             evtType.GetField("Event").SetValue(evtDef, "click");
@@ -540,7 +540,7 @@ class Probe
             // v0.30：表达式绑定 + 事件写变量
             // 目的不是"能跑"，而是确认这三样真的进了 patch：
             //   cmd.bind（属性 → 表达式树）、event.writes（事件 → 变量）、var.upsert（变量声明）
-            var exprType = asm.GetType("GHCE.Types.RuntimeExprDef");
+            var exprType = asm.GetType("Colugo.Types.RuntimeExprDef");
             var varNode = exprType.GetMethod("Var").Invoke(null, new object[] { "v_w", 0.0 });
             var constSix = exprType.GetMethod("Const").Invoke(null, new object[] { 6.0 });
             var widthExpr = exprType.GetMethod("Bin").Invoke(null, new object[] { "mul", varNode, constSix });
@@ -551,7 +551,7 @@ class Probe
             bindDict["width"] = widthExpr;
             cmdType.GetField("Binds").SetValue(cmdDef, bindDict);
 
-            var writeType = asm.GetType("GHCE.Types.WriteDef");
+            var writeType = asm.GetType("Colugo.Types.WriteDef");
             var write = Activator.CreateInstance(writeType);
             writeType.GetField("Var").SetValue(write, "v_w");
             writeType.GetField("Op").SetValue(write, "toggle");
@@ -633,8 +633,8 @@ class Probe
             if (json != null)
             {
                 System.IO.File.WriteAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-csharp-patch.json"), json);
-                Console.WriteLine("  wrote: ghce-csharp-patch.json");
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "colugo-csharp-patch.json"), json);
+                Console.WriteLine("  wrote: colugo-csharp-patch.json");
             }
             var args2 = new object[] { canvasDef, cmdList, entList, null, null };
             var json2 = (string)build.Invoke(pb, args2);
@@ -662,10 +662,10 @@ class Probe
             "{\"v\":\"0.1\",\"t\":\"stat\",\"ptr\":[10,20],\"inside\":true,\"down\":false,\"clicks\":3," +
             "\"entities\":0,\"alive\":0,\"rev\":5,\"fps\":60,\"drawMs\":1.25,\"stepMs\":0.4,\"time\":2.5," +
             "\"keys\":\"w\",\"signals\":{\"a1b2c3d4\":0.4375}}";
-        GHCE.Bridge.RuntimeStat.Update(statJson);
-        bool hasSig = GHCE.Bridge.RuntimeStat.HasSignal("a1b2c3d4");
-        double sigVal = GHCE.Bridge.RuntimeStat.SignalValue("a1b2c3d4");
-        Console.WriteLine($"  stat parse: has={hasSig} value={sigVal:0.####} clicks={GHCE.Bridge.RuntimeStat.Clicks} rev={GHCE.Bridge.RuntimeStat.Rev}");
+        Colugo.Bridge.RuntimeStat.Update(statJson);
+        bool hasSig = Colugo.Bridge.RuntimeStat.HasSignal("a1b2c3d4");
+        double sigVal = Colugo.Bridge.RuntimeStat.SignalValue("a1b2c3d4");
+        Console.WriteLine($"  stat parse: has={hasSig} value={sigVal:0.####} clicks={Colugo.Bridge.RuntimeStat.Clicks} rev={Colugo.Bridge.RuntimeStat.Rev}");
         if (!hasSig || Math.Abs(sigVal - 0.4375) > 1e-9)
         {
             fail++;
@@ -676,10 +676,10 @@ class Probe
         // Rhino 是行向量约定（p' = p*M），Three.js 是列向量约定（p' = M*p），差一个转置。
         // 这里用"绕 Z 转 90° 再平移"当已知答案，两边必须把同一个点送到同一个位置。
         {
-            var rowMajor = GHCE.Types.Transform3DMath.RotationZ90ThenTranslate(10, 20, 5);
-            var col = GHCE.Types.Transform3DMath.ToThreeOrder(rowMajor);
-            var viaRow = GHCE.Types.Transform3DMath.ApplyRowVector(rowMajor, 1, 0, 0);
-            var viaCol = GHCE.Types.Transform3DMath.ApplyColumnVector(col, 1, 0, 0);
+            var rowMajor = Colugo.Types.Transform3DMath.RotationZ90ThenTranslate(10, 20, 5);
+            var col = Colugo.Types.Transform3DMath.ToThreeOrder(rowMajor);
+            var viaRow = Colugo.Types.Transform3DMath.ApplyRowVector(rowMajor, 1, 0, 0);
+            var viaCol = Colugo.Types.Transform3DMath.ApplyColumnVector(col, 1, 0, 0);
             bool same = Math.Abs(viaRow[0] - viaCol[0]) < 1e-12
                         && Math.Abs(viaRow[1] - viaCol[1]) < 1e-12
                         && Math.Abs(viaRow[2] - viaCol[2]) < 1e-12;
@@ -697,32 +697,32 @@ class Probe
 
         // ---- 三维：patch 序列化 ----
         {
-            var mesh = new GHCE.Types.MeshDef
+            var mesh = new Colugo.Types.MeshDef
             {
                 Id = "m_probe",
                 Positions = new double[] { 0, 0, 0, 1, 0, 0, 0, 1, 0 },
                 Indices = new int[] { 0, 1, 2 },
-                Xform = new GHCE.Types.Transform3DDef
+                Xform = new Colugo.Types.Transform3DDef
                 {
-                    Matrix = GHCE.Types.Transform3DMath.ToThreeOrder(
-                        GHCE.Types.Transform3DMath.RotationZ90ThenTranslate(1, 2, 3)),
+                    Matrix = Colugo.Types.Transform3DMath.ToThreeOrder(
+                        Colugo.Types.Transform3DMath.RotationZ90ThenTranslate(1, 2, 3)),
                 },
             };
-            var cmd3d = new GHCE.Types.Cmd3DDef
+            var cmd3d = new Colugo.Types.Cmd3DDef
             {
                 Id = "c3_probe",
                 MeshId = mesh.Id,
                 Mesh = mesh,
-                Material = new GHCE.Types.Material3DDef { Mode = 3, Color = "#07a954", Size = 4, Glow = 0.5 },
+                Material = new Colugo.Types.Material3DDef { Mode = 3, Color = "#07a954", Size = 4, Glow = 0.5 },
                 // 静态矩阵：这一段是给回放测试用的（矩阵平移必须落在 (1,2,3)）
                 Xform = mesh.Xform,
             };
-            var scene = new GHCE.Types.Scene3DDef { Background = "#101010", Lights = true };
+            var scene = new Colugo.Types.Scene3DDef { Background = "#101010", Lights = true };
             scene.Cmds.Add(cmd3d);
 
-            var pb3 = new GHCE.Bridge.PatchBuilder();
-            var canvas3 = new GHCE.Types.CanvasDef { W = 800, H = 600 };
-            var j3 = pb3.Build(canvas3, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), null, scene, out var sum3);
+            var pb3 = new Colugo.Bridge.PatchBuilder();
+            var canvas3 = new Colugo.Types.CanvasDef { W = 800, H = 600 };
+            var j3 = pb3.Build(canvas3, new System.Collections.Generic.List<Colugo.Types.Colugo_Command>(), null, scene, out var sum3);
 
             bool hasMesh = j3 != null && j3.Contains("\"op\":\"mesh.upsert\"");
             bool hasCmd = j3 != null && j3.Contains("\"op\":\"cmd3d.upsert\"");
@@ -733,7 +733,7 @@ class Probe
             // v0.30.1：帧序列自带的时长必须进协议 —— 否则三维只能按写死的 1.5s 循环。
             // 单独算一份带帧序列的 patch：上面那份保持静态矩阵，回放测试还要用。
             var savedX = cmd3d.Xform;
-            cmd3d.Xform = new GHCE.Types.Transform3DDef
+            cmd3d.Xform = new Colugo.Types.Transform3DDef
             {
                 N = 2,
                 Duration = 2.5,
@@ -743,8 +743,8 @@ class Probe
                     1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  10, 0, 0, 1,
                 },
             };
-            var jDur = new GHCE.Bridge.PatchBuilder()
-                .Build(canvas3, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), null, scene, out _);
+            var jDur = new Colugo.Bridge.PatchBuilder()
+                .Build(canvas3, new System.Collections.Generic.List<Colugo.Types.Colugo_Command>(), null, scene, out _);
             cmd3d.Xform = savedX;
 
             bool hasDuration = jDur != null && jDur.Contains("\"duration\":2.5");
@@ -752,8 +752,8 @@ class Probe
             if (j3 != null)
             {
                 System.IO.File.WriteAllText(
-                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-csharp-patch3d.json"), j3);
-                Console.WriteLine("  wrote: ghce-csharp-patch3d.json");
+                    System.IO.Path.Combine(System.IO.Path.GetTempPath(), "colugo-csharp-patch3d.json"), j3);
+                Console.WriteLine("  wrote: colugo-csharp-patch3d.json");
             }
 
             if (!hasMesh || !hasCmd || !hasScene || !hasMatrix || !hasMode || !hasKind || !hasDuration)
@@ -764,7 +764,7 @@ class Probe
             }
 
             // 同样的输入再算一次必须为 null —— "无变化不发包"在三维上也要成立
-            var j3b = pb3.Build(canvas3, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), null, scene, out _);
+            var j3b = pb3.Build(canvas3, new System.Collections.Generic.List<Colugo.Types.Colugo_Command>(), null, scene, out _);
             Console.WriteLine($"  patch3d idle (expect null): {(j3b == null ? "null" : "NOT NULL")}");
             if (j3b != null) fail++;
         }
@@ -798,11 +798,11 @@ class Probe
     static void SignalMode()
     {
         const int port = 8788;
-        var err = GHCE.Bridge.BridgeServer.StartAuto(port);
+        var err = Colugo.Bridge.BridgeServer.StartAuto(port);
         if (err != null) { Console.WriteLine("SIGNAL FAIL: " + err); return; }
-        Console.WriteLine($"actual port: {GHCE.Bridge.BridgeServer.Port}");
+        Console.WriteLine($"actual port: {Colugo.Bridge.BridgeServer.Port}");
 
-        var def = new GHCE.Types.SignalDef
+        var def = new Colugo.Types.SignalDef
         {
             Id = "a1b2c3d4", Kind = "noise1", Seed = 7, Rate = 0.6, Args = new[] { 0.0 }
         };
@@ -812,12 +812,12 @@ class Probe
 
         for (int i = 0; i < 200; i++)
         {
-            GHCE.Bridge.BridgeServer.PublishSignal(def);
+            Colugo.Bridge.BridgeServer.PublishSignal(def);
             if (i % 5 == 0)
-                Console.WriteLine($"  pub {i} clients={GHCE.Bridge.BridgeServer.ClientCount}");
+                Console.WriteLine($"  pub {i} clients={Colugo.Bridge.BridgeServer.ClientCount}");
             System.Threading.Thread.Sleep(200);
         }
-        GHCE.Bridge.BridgeServer.Stop();
+        Colugo.Bridge.BridgeServer.Stop();
     }
 
     /// <summary>
@@ -827,42 +827,42 @@ class Probe
     static void ServeMode()
     {
         const int port = 8777;
-        var err = GHCE.Bridge.BridgeServer.StartAuto(port);
+        var err = Colugo.Bridge.BridgeServer.StartAuto(port);
         if (err != null)
         {
             Console.WriteLine("SERVE FAIL: " + err);
             return;
         }
-        Console.WriteLine($"actual port: {GHCE.Bridge.BridgeServer.Port}  (preferred {port})");
-        Console.WriteLine($"preview url: {GHCE.Bridge.BridgeServer.PreviewUrl}");
+        Console.WriteLine($"actual port: {Colugo.Bridge.BridgeServer.Port}  (preferred {port})");
+        Console.WriteLine($"preview url: {Colugo.Bridge.BridgeServer.PreviewUrl}");
 
-        var canvas = new GHCE.Types.CanvasDef { W = 1200, H = 800, Bg = "#0b0b0f" };
-        var paths = new System.Collections.Generic.List<GHCE.Types.PathDef>();
-        var cmds = new System.Collections.Generic.List<GHCE.Types.GHCE_Command>();
+        var canvas = new Colugo.Types.CanvasDef { W = 1200, H = 800, Bg = "#0b0b0f" };
+        var paths = new System.Collections.Generic.List<Colugo.Types.PathDef>();
+        var cmds = new System.Collections.Generic.List<Colugo.Types.Colugo_Command>();
 
         for (int i = 0; i < 60; i++)
         {
-            var p = new GHCE.Types.PathDef { Id = "g_s" + i, Closed = false, XY = new double[2 * 81] };
+            var p = new Colugo.Types.PathDef { Id = "g_s" + i, Closed = false, XY = new double[2 * 81] };
             paths.Add(p);
-            cmds.Add(new GHCE.Types.GHCE_Command(new GHCE.Types.CommandDef
+            cmds.Add(new Colugo.Types.Colugo_Command(new Colugo.Types.CommandDef
             {
                 Id = "c_s" + i,
                 GeomId = p.Id,
                 Path = p,
                 Layer = i % 10 == 0 ? "accent" : "main",
                 Order = i,
-                Stroke = new GHCE.Types.StrokeDef
+                Stroke = new Colugo.Types.StrokeDef
                 {
                     Width = 0.9,
                     Alpha = 0.65,
                     Color = i % 10 == 0 ? "#FD7AB4" : "#E8E6DF"
                 },
-                Fill = new GHCE.Types.FillDef()
+                Fill = new Colugo.Types.FillDef()
             }));
         }
 
-        var pb = new GHCE.Bridge.PatchBuilder();
-        Console.WriteLine($"READY {GHCE.Bridge.BridgeServer.PreviewUrl}");
+        var pb = new Colugo.Bridge.PatchBuilder();
+        Console.WriteLine($"READY {Colugo.Bridge.BridgeServer.PreviewUrl}");
         Console.Out.Flush();
 
         for (int tick = 0; tick < 240; tick++)
@@ -880,13 +880,13 @@ class Probe
             }
 
             var json = pb.Build(canvas, cmds, null, null, out var summary);
-            GHCE.Bridge.BridgeServer.Broadcast(json);
+            Colugo.Bridge.BridgeServer.Broadcast(json);
             if (tick % 10 == 0)
-                Console.WriteLine($"  tick {tick}: {summary}  clients={GHCE.Bridge.BridgeServer.ClientCount}");
+                Console.WriteLine($"  tick {tick}: {summary}  clients={Colugo.Bridge.BridgeServer.ClientCount}");
             System.Threading.Thread.Sleep(500);
         }
 
-        GHCE.Bridge.BridgeServer.Stop();
+        Colugo.Bridge.BridgeServer.Stop();
     }
 
     // ================= v0.31 Mark =================
@@ -903,9 +903,9 @@ class Probe
         }
 
         // --- 印章形状：大小按"最大外接范围"定义，五个形状并排看一样大 ---
-        var dot = GHCE.Components.MarkMath.Stamp(1, 20, 1);
-        var dash = GHCE.Components.MarkMath.Stamp(2, 20, 2);
-        var square = GHCE.Components.MarkMath.Stamp(3, 20, 1);
+        var dot = Colugo.Components.MarkMath.Stamp(1, 20, 1);
+        var dash = Colugo.Components.MarkMath.Stamp(2, 20, 2);
+        var square = Colugo.Components.MarkMath.Stamp(3, 20, 1);
 
         Check("stamp dot", dot.Length == 48 && BBox(dot).maxX <= 10.0001 && BBox(dot).minX >= -10.0001,
             $"{dot.Length / 2} pts, x [{BBox(dot).minX:0.##},{BBox(dot).maxX:0.##}]");
@@ -915,27 +915,27 @@ class Probe
             $"{square.Length / 2} pts");
 
         // --- 自定义印章归一化：100×100 的方块缩到 size=20，且居中 ---
-        var norm = GHCE.Components.MarkMath.Normalize(
+        var norm = Colugo.Components.MarkMath.Normalize(
             new double[] { 0, 0, 100, 0, 100, 100, 0, 100, 0, 0 }, 20, 1, 0);
         var nb = BBox(norm);
         Check("normalize 100→20", Math.Abs(nb.minX + 10) < 1e-6 && Math.Abs(nb.maxY - 10) < 1e-6,
             $"x [{nb.minX:0.##},{nb.maxX:0.##}] y [{nb.minY:0.##},{nb.maxY:0.##}]");
 
         // --- 沿路径采样：600px 直线 / 10px 间距 = 61 个点（含两端） ---
-        var line = new GHCE.Types.PathDef { Id = "g_line", XY = new double[] { 0, 0, 600, 0 } };
-        var s1 = GHCE.Components.MarkMath.Sample(line, 10, GHCE.Components.MarkMath.MaxMarks);
+        var line = new Colugo.Types.PathDef { Id = "g_line", XY = new double[] { 0, 0, 600, 0 } };
+        var s1 = Colugo.Components.MarkMath.Sample(line, 10, Colugo.Components.MarkMath.MaxMarks);
         Check("sample open path", s1.Count == 61
             && Math.Abs(s1[0].U) < 1e-9 && Math.Abs(s1[60].U - 1) < 1e-9
             && Math.Abs(s1[30].X - 300) < 1e-6 && Math.Abs(s1[30].Angle) < 1e-9,
             $"{s1.Count} marks, mid x={s1[30].X:0.##} u={s1[30].U:0.##}");
 
         // --- 闭合路径：100×100 方框周长 400 / 25 = 16 个，首点不重复 ---
-        var box = new GHCE.Types.PathDef
+        var box = new Colugo.Types.PathDef
         {
             Id = "g_box", Closed = true,
             XY = new double[] { 0, 0, 100, 0, 100, 100, 0, 100, 0, 0 },
         };
-        var s2 = GHCE.Components.MarkMath.Sample(box, 25, GHCE.Components.MarkMath.MaxMarks);
+        var s2 = Colugo.Components.MarkMath.Sample(box, 25, Colugo.Components.MarkMath.MaxMarks);
         bool wrapOk = s2.Count == 16
             && Math.Abs(s2[0].X) < 1e-6 && Math.Abs(s2[0].Y) < 1e-6
             && Math.Abs(s2[4].X - 100) < 1e-6    // 第 5 个点落在右上角
@@ -943,42 +943,42 @@ class Probe
         Check("sample closed path", wrapOk, $"{s2.Count} marks, p4=({s2[4].X:0.##},{s2[4].Y:0.##}) p15=({s2[15].X:0.##},{s2[15].Y:0.##})");
 
         // --- 放置矩阵：转 90° 后 (1,0) 必须落到 (100,51) ---
-        var m = GHCE.Components.MarkMath.Placement(100, 50, Math.PI / 2);
+        var m = Colugo.Components.MarkMath.Placement(100, 50, Math.PI / 2);
         var p1 = Apply(m, 1, 0);
         Check("placement rotate+move", Math.Abs(p1[0] - 100) < 1e-9 && Math.Abs(p1[1] - 51) < 1e-9,
             $"({p1[0]:0.###},{p1[1]:0.###}) expect (100,51)");
 
         // --- 旋转线性部分：位置不能动 ---
-        var m2 = GHCE.Components.MarkMath.Placement(100, 50, Math.PI / 2);
-        GHCE.Components.MarkMath.RotateLinear(m2, -Math.PI / 2);
+        var m2 = Colugo.Components.MarkMath.Placement(100, 50, Math.PI / 2);
+        Colugo.Components.MarkMath.RotateLinear(m2, -Math.PI / 2);
         var p2 = Apply(m2, 1, 0);
         Check("rotate keeps position", Math.Abs(m2[4] - 100) < 1e-9 && Math.Abs(m2[5] - 50) < 1e-9
             && Math.Abs(p2[0] - 101) < 1e-9 && Math.Abs(p2[1] - 50) < 1e-9,
             $"({p2[0]:0.###},{p2[1]:0.###}) origin ({m2[4]:0.##},{m2[5]:0.##})");
 
         // --- 缩放线性部分：位置同样不能动 ---
-        var m3 = GHCE.Components.MarkMath.Placement(30, 40, 0);
-        GHCE.Components.MarkMath.ScaleLinear(m3, 3);
+        var m3 = Colugo.Components.MarkMath.Placement(30, 40, 0);
+        Colugo.Components.MarkMath.ScaleLinear(m3, 3);
         Check("scale keeps position", Math.Abs(m3[4] - 30) < 1e-9 && Math.Abs(m3[5] - 40) < 1e-9
             && Math.Abs(Apply(m3, 1, 0)[0] - 33) < 1e-9, $"x(1)→{Apply(m3, 1, 0)[0]:0.##}");
 
         // --- 映射与伽马 ---
-        double mid = GHCE.Components.MarkMath.Map(0.5, 0, 1, 1, 5, 1);
-        double bias = GHCE.Components.MarkMath.Map(0.5, 0, 1, 1, 5, 2);
-        double clamp = GHCE.Components.MarkMath.Map(-3, 0, 1, 1, 5, 1);
+        double mid = Colugo.Components.MarkMath.Map(0.5, 0, 1, 1, 5, 1);
+        double bias = Colugo.Components.MarkMath.Map(0.5, 0, 1, 1, 5, 2);
+        double clamp = Colugo.Components.MarkMath.Map(-3, 0, 1, 1, 5, 1);
         Check("map + bias", Math.Abs(mid - 3) < 1e-9 && Math.Abs(bias - 2) < 1e-9 && Math.Abs(clamp - 1) < 1e-9,
             $"mid={mid:0.##} bias2={bias:0.##} clamp={clamp:0.##}");
 
         // --- 属性写入：尺寸改矩阵、不透明度乘算、线宽乘算 ---
-        var cmd = new GHCE.Types.CommandDef
+        var cmd = new Colugo.Types.CommandDef
         {
-            Matrix = GHCE.Components.MarkMath.Placement(10, 20, 0),
+            Matrix = Colugo.Components.MarkMath.Placement(10, 20, 0),
             Opacity = 1,
-            Stroke = new GHCE.Types.StrokeDef { Width = 2 },
+            Stroke = new Colugo.Types.StrokeDef { Width = 2 },
         };
-        GHCE.Components.MarkMath.Apply(cmd, 1, 2.5);
-        GHCE.Components.MarkMath.Apply(cmd, 3, 0.4);
-        GHCE.Components.MarkMath.Apply(cmd, 4, 3);
+        Colugo.Components.MarkMath.Apply(cmd, 1, 2.5);
+        Colugo.Components.MarkMath.Apply(cmd, 3, 0.4);
+        Colugo.Components.MarkMath.Apply(cmd, 4, 3);
         bool applyOk = Math.Abs(cmd.Matrix[0] - 2.5) < 1e-9 && Math.Abs(cmd.Matrix[4] - 10) < 1e-9
                        && Math.Abs(cmd.Opacity - 0.4) < 1e-9 && Math.Abs(cmd.Stroke.Width - 6) < 1e-9;
         Check("apply properties", applyOk,
@@ -991,33 +991,33 @@ class Probe
     static int TestMarkPatch()
     {
         int fail = 0;
-        var brush = new GHCE.Types.PathDef
+        var brush = new Colugo.Types.PathDef
         {
             Id = "g_brush_probe",
             Closed = true,
-            XY = GHCE.Components.MarkMath.Stamp(1, 8, 1),
+            XY = Colugo.Components.MarkMath.Stamp(1, 8, 1),
         };
-        var src = new GHCE.Types.PathDef { Id = "g_probe_line", XY = new double[] { 100, 100, 700, 100 } };
-        var samples = GHCE.Components.MarkMath.Sample(src, 6, GHCE.Components.MarkMath.MaxMarks);
+        var src = new Colugo.Types.PathDef { Id = "g_probe_line", XY = new double[] { 100, 100, 700, 100 } };
+        var samples = Colugo.Components.MarkMath.Sample(src, 6, Colugo.Components.MarkMath.MaxMarks);
 
-        var cmds = new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(samples.Count);
+        var cmds = new System.Collections.Generic.List<Colugo.Types.Colugo_Command>(samples.Count);
         for (int i = 0; i < samples.Count; i++)
         {
             var sm = samples[i];
-            cmds.Add(new GHCE.Types.GHCE_Command(new GHCE.Types.CommandDef
+            cmds.Add(new Colugo.Types.Colugo_Command(new Colugo.Types.CommandDef
             {
-                Id = GHCE.Bridge.PatchBuilder.StableId("c_mk_", $"probe|{src.Id}|{i}"),
+                Id = Colugo.Bridge.PatchBuilder.StableId("c_mk_", $"probe|{src.Id}|{i}"),
                 GeomId = brush.Id,
                 Path = brush,
                 Layer = "main",
                 Order = i,
-                Matrix = GHCE.Components.MarkMath.Placement(sm.X, sm.Y, sm.Angle),
+                Matrix = Colugo.Components.MarkMath.Placement(sm.X, sm.Y, sm.Angle),
                 MarkU = sm.U,
             }));
         }
 
-        var canvas = new GHCE.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
-        var json = new GHCE.Bridge.PatchBuilder().Build(canvas, cmds, null, null, out var summary);
+        var canvas = new Colugo.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
+        var json = new Colugo.Bridge.PatchBuilder().Build(canvas, cmds, null, null, out var summary);
 
         int geoms = Count(json, "geom.upsert");
         int ups = Count(json, "cmd.upsert");
@@ -1038,7 +1038,7 @@ class Probe
         if (!firstAtStart) fail++;
 
         System.IO.File.WriteAllText(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-mark-patch.json"), json);
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "colugo-mark-patch.json"), json);
         return fail;
     }
 
@@ -1073,24 +1073,24 @@ class Probe
     static int TestEntityProgram()
     {
         int fail = 0;
-        var path = new GHCE.Types.PathDef { Id = "g_prog", XY = new double[] { 0, 0, 100, 100 } };
-        var def = new GHCE.Types.EntityDef { Id = "e_prog", Path = path, Count = 4, Speed = 0 };
+        var path = new Colugo.Types.PathDef { Id = "g_prog", XY = new double[] { 0, 0, 100, 100 } };
+        var def = new Colugo.Types.EntityDef { Id = "e_prog", Path = path, Count = 4, Speed = 0 };
 
-        var prog = new GHCE.Types.EntityProgramDef();
-        prog.Steps.Add(new GHCE.Types.EntityStepDef
+        var prog = new Colugo.Types.EntityProgramDef();
+        prog.Steps.Add(new Colugo.Types.EntityStepDef
         {
             Slot = "vx",
             Op = "add",
-            Expr = GHCE.Types.RuntimeExprDef.Bin("mul",
-                GHCE.Types.RuntimeExprDef.State("x"),
-                GHCE.Types.RuntimeExprDef.DeltaTime()),
+            Expr = Colugo.Types.RuntimeExprDef.Bin("mul",
+                Colugo.Types.RuntimeExprDef.State("x"),
+                Colugo.Types.RuntimeExprDef.DeltaTime()),
         });
-        prog.SpawnWhen = GHCE.Types.RuntimeExprDef.Bin("gt",
-            GHCE.Types.RuntimeExprDef.State("age"), GHCE.Types.RuntimeExprDef.Const(1));
+        prog.SpawnWhen = Colugo.Types.RuntimeExprDef.Bin("gt",
+            Colugo.Types.RuntimeExprDef.State("age"), Colugo.Types.RuntimeExprDef.Const(1));
         prog.SpawnCount = 2;
         prog.MaxGen = 2;
-        prog.DestroyWhen = GHCE.Types.RuntimeExprDef.Bin("gt",
-            GHCE.Types.RuntimeExprDef.State("age"), GHCE.Types.RuntimeExprDef.Const(4));
+        prog.DestroyWhen = Colugo.Types.RuntimeExprDef.Bin("gt",
+            Colugo.Types.RuntimeExprDef.State("age"), Colugo.Types.RuntimeExprDef.Const(4));
         prog.Keep = 8;
         def.Program = prog;
 
@@ -1107,13 +1107,13 @@ class Probe
         Console.WriteLine($"  program deep copy: {deep}");
         if (!deep) fail++;
 
-        var canvas = new GHCE.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
-        var list = new System.Collections.Generic.List<GHCE.Types.GHCE_Entity>
+        var canvas = new Colugo.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
+        var list = new System.Collections.Generic.List<Colugo.Types.Colugo_Entity>
         {
-            new GHCE.Types.GHCE_Entity(def),
+            new Colugo.Types.Colugo_Entity(def),
         };
-        var json = new GHCE.Bridge.PatchBuilder().Build(
-            canvas, new System.Collections.Generic.List<GHCE.Types.GHCE_Command>(), list, null, out var summary);
+        var json = new Colugo.Bridge.PatchBuilder().Build(
+            canvas, new System.Collections.Generic.List<Colugo.Types.Colugo_Command>(), list, null, out var summary);
         var flat = json == null ? "" : json.Replace(" ", "");
 
         bool hasProgram = flat.Contains("\"program\"");
@@ -1131,7 +1131,7 @@ class Probe
         }
 
         System.IO.File.WriteAllText(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-entity-program.json"), json);
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "colugo-entity-program.json"), json);
         return fail;
     }
 
@@ -1207,14 +1207,14 @@ class Probe
         // --- 四只电池在不在、端口数是否守规矩 ---
         var expected = new (string type, string name, int ins, int outs)[]
         {
-            ("GHCE.Components.TextComponent", "Text", 6, 2),
-            ("GHCE.Components.ImageComponent", "Image", 2, 2),
-            ("GHCE.Components.DrawImageComponent", "Draw Image", 6, 2),
-            ("GHCE.Components.ClipComponent", "Clip", 3, 2),
+            ("Colugo.Components.TextComponent", "Text", 6, 2),
+            ("Colugo.Components.ImageComponent", "Image", 2, 2),
+            ("Colugo.Components.DrawImageComponent", "Draw Image", 6, 2),
+            ("Colugo.Components.ClipComponent", "Clip", 3, 2),
         };
         foreach (var e in expected)
         {
-            var t = typeof(GHCE.Components.TextComponent).Assembly.GetType(e.type);
+            var t = typeof(Colugo.Components.TextComponent).Assembly.GetType(e.type);
             bool ok = t != null;
             int ins = 0, outs = 0;
             string shown = "missing";
@@ -1231,20 +1231,20 @@ class Probe
         }
 
         // --- patch：图片几何 + 裁剪 ---
-        var img = new GHCE.Types.ImageDef
+        var img = new Colugo.Types.ImageDef
         {
             Id = "g_probe_img",
             Src = "data:image/png;base64," + TINY_PNG,
             W = 64,
             H = 64,
         };
-        var clipPath = new GHCE.Types.PathDef
+        var clipPath = new Colugo.Types.PathDef
         {
             Id = "g_probe_clip",
             Closed = true,
             XY = new double[] { 0, 0, 100, 0, 100, 100, 0, 100, 0, 0 },
         };
-        var def = new GHCE.Types.CommandDef
+        var def = new Colugo.Types.CommandDef
         {
             Id = "c_probe_img",
             GeomId = img.Id,
@@ -1252,15 +1252,15 @@ class Probe
             Layer = "main",
             Order = 0,
             Matrix = new[] { 200.0, 0, 0, 200, 50, 60 },
-            Clip = new GHCE.Types.ClipDef { GeomId = clipPath.Id, Invert = true, Path = clipPath },
+            Clip = new Colugo.Types.ClipDef { GeomId = clipPath.Id, Invert = true, Path = clipPath },
         };
 
-        var cmdList = new System.Collections.Generic.List<GHCE.Types.GHCE_Command>
+        var cmdList = new System.Collections.Generic.List<Colugo.Types.Colugo_Command>
         {
-            new GHCE.Types.GHCE_Command(def),
+            new Colugo.Types.Colugo_Command(def),
         };
-        var canvas = new GHCE.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
-        var json = new GHCE.Bridge.PatchBuilder().Build(canvas, cmdList, null, null, out var summary);
+        var canvas = new Colugo.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
+        var json = new Colugo.Bridge.PatchBuilder().Build(canvas, cmdList, null, null, out var summary);
         var flat = json == null ? "" : json.Replace(" ", "");
 
         bool hasImageGeom = flat.Contains("\"kind\":\"image\"") && flat.Contains("\"id\":\"g_probe_img\"");
@@ -1280,8 +1280,8 @@ class Probe
         var second = def.Duplicate();
         second.Id = "c_probe_img2";
         second.Clip = null;
-        cmdList.Add(new GHCE.Types.GHCE_Command(second));
-        var json2 = new GHCE.Bridge.PatchBuilder()
+        cmdList.Add(new Colugo.Types.Colugo_Command(second));
+        var json2 = new Colugo.Bridge.PatchBuilder()
             .Build(canvas, cmdList, null, null, out _)
             .Replace(" ", "");
         int imgGeoms = Count(json2, "\"kind\":\"image\"");
@@ -1289,7 +1289,7 @@ class Probe
         if (imgGeoms != 1) { fail++; Console.WriteLine("  FAIL: 图片几何按指令重复发送了"); }
 
         System.IO.File.WriteAllText(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-composition.json"), json);
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "colugo-composition.json"), json);
         return fail;
     }
 
