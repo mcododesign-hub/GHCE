@@ -42,8 +42,14 @@ function inferType(node, ins) {
       return 'v3';
     case 'uv':
       return 'v2';
+    case 'vec2':
+      return 'v2';
+    case 'vec3':
+      return 'v3';
     case 'time':
       return 'f';
+    case 'step':
+      return ins.x ? ins.x.ty : 'f';
     case 'const':
       return Array.isArray(node.v) ? (node.v.length === 2 ? 'v2' : 'v3') : 'f';
     case 'uniform':
@@ -238,6 +244,22 @@ export class ShaderCompiler {
         const f = n.c || 'x';
         if (f === 'x' || f === 'y' || f === 'z') { node = a[f]; ty = 'f'; }
         else { node = a; ty = 'v3'; }
+      } else if (op === 'vec2' || op === 'vec3') {
+        // 把若干标量拼成向量。没这个 op，"方向"这类值根本无法从 GH 里构造出来
+        const x = ref(n.x ?? 0), y = ref(n.y ?? 0);
+        if (!x || !y) return null;
+        if (op === 'vec2') { node = t.vec2(x, y); ty = 'v2'; }
+        else {
+          const z = ref(n.z ?? 0);
+          if (!z) return null;
+          node = t.vec3(x, y, z);
+          ty = 'v3';
+        }
+      } else if (op === 'step') {
+        const edge = ref(n.e0 ?? 0.5), x = ref(n.x);
+        if (!x) return null;
+        node = t.step(edge, x);
+        ty = byId.get(n.x) ? (done.get(n.x)?.ty || 'f') : 'f';
       } else if (op === 'mix') {
         const a = ref(n.a), b = ref(n.b), f = ref(n.t);
         if (!a || !b || !f) return null;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -236,7 +236,7 @@ namespace Colugo.Components
         {
             "add", "sub", "mul", "div", "pow",
             "sin", "cos", "abs", "fract", "floor", "sqrt", "oneMinus", "saturate",
-            "remap", "smoothstep", "clamp",
+            "remap", "smoothstep", "clamp", "step",
             "dot", "length", "normalize",
         };
 
@@ -255,8 +255,8 @@ namespace Colugo.Components
         {
             p.AddIntegerParameter("Op", "Op",
                 "1 add · 2 sub · 3 mul · 4 div · 5 pow · 6 sin · 7 cos · 8 abs · 9 fract · 10 floor · "
-                + "11 sqrt · 12 oneMinus · 13 saturate · 14 remap · 15 smoothstep · 16 clamp · "
-                + "17 dot · 18 length · 19 normalize", GH_ParamAccess.item, 6);
+                + "11 sqrt · 12 oneMinus · 13 saturate · 14 remap · 15 smoothstep · 16 clamp · 17 step · "
+                + "18 dot · 19 length · 20 normalize", GH_ParamAccess.item, 6);
             p.AddParameter(new Param_Colugo_ShaderExpr(), "A", "A", "Primary input", GH_ParamAccess.item);
             p.AddParameter(new Param_Colugo_ShaderExpr(), "B", "B",
                 "Second input / remap in0 / smoothstep edge0 / clamp low", GH_ParamAccess.item);
@@ -330,6 +330,15 @@ namespace Colugo.Components
                 id = e.Add("clamp", "f", args.ToArray());
                 type = a.Type;
             }
+            else if (name == "step")
+            {
+                // step(edge, x)：x >= edge 取 1，否则 0。B 是 edge
+                args.Clear();
+                args.Add(("x", a.OutId));
+                if (b != null) args.Add(("e0", b.OutId));
+                id = e.Add("step", "f", args.ToArray());
+                type = "f";
+            }
             else if (name == "dot")
             {
                 if (b == null)
@@ -400,6 +409,128 @@ namespace Colugo.Components
             var id = e.Add("mix", a.Type, ("a", a.OutId), ("b", b.OutId), ("t", f.OutId));
             e.OutId = id;
             e.Type = a.Type;
+            DA.SetData(0, new Colugo_ShaderExpr(e));
+        }
+    }
+
+    public class ShaderSwizzleComponent : ShaderBattery
+    {
+        public ShaderSwizzleComponent() : base("Shader Swizzle", "SSwz",
+            "Pick one component out of a vector (vec3 → float)",
+            new Guid("5a0c7e10-2222-4b02-8d02-0000000000d9")) { }
+        protected override Bitmap Icon => Icons.ShaderSwizzle;
+
+        protected override void RegisterInputParams(GH_InputParamManager p)
+        {
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "A", "A", "Vector input", GH_ParamAccess.item);
+            p.AddIntegerParameter("Channel", "C", "1 x · 2 y · 3 z", GH_ParamAccess.item, 1);
+        }
+
+        protected override void RegisterOutputParams(GH_OutputParamManager p) =>
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Shader", "S", "float component", GH_ParamAccess.item);
+
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            var a = In(DA, 0);
+            if (a == null)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "A 要接一个向量（Position / Normal / UV / Vector）");
+                return;
+            }
+            int ch = 1;
+            DA.GetData(1, ref ch);
+            ch = Math.Clamp(ch, 1, 3);
+            string comp = "xyz".Substring(ch - 1, 1);
+
+            var e = NewExpr();
+            e.Absorb(a);
+            var id = e.Add("swizzle", "f", ("a", a.OutId), ("c", comp));
+            e.OutId = id;
+            e.Type = "f";
+            DA.SetData(0, new Colugo_ShaderExpr(e));
+        }
+    }
+
+    public class ShaderTimeComponent : ShaderBattery
+    {
+        public ShaderTimeComponent() : base("Shader Time", "STime",
+            "Artwork clock as a shader input. Scale and offset are baked into the graph",
+            new Guid("5a0c7e10-2222-4b02-8d02-0000000000db")) { }
+        protected override Bitmap Icon => Icons.ShaderTime;
+
+        protected override void RegisterInputParams(GH_InputParamManager p)
+        {
+            p.AddNumberParameter("Scale", "S", "Speed multiplier, 2 = twice as fast", GH_ParamAccess.item, 1.0);
+            p.AddNumberParameter("Offset", "O", "Phase offset in seconds", GH_ParamAccess.item, 0.0);
+        }
+
+        protected override void RegisterOutputParams(GH_OutputParamManager p) =>
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Shader", "S", "float time node", GH_ParamAccess.item);
+
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            double scale = Num(DA, 0, 1.0);
+            double offset = Num(DA, 1, 0.0);
+
+            var e = NewExpr();
+            string cur = e.Add("time", "f");
+
+            // scale = 1 / offset = 0 时不生成节点：图越短，增量 diff 越省
+            if (Math.Abs(scale - 1.0) > 1e-9)
+            {
+                var k = e.Add("const", "f", ("v", scale));
+                cur = e.Add("mul", "f", ("a", cur), ("b", k));
+            }
+            if (Math.Abs(offset) > 1e-9)
+            {
+                var k = e.Add("const", "f", ("v", offset));
+                cur = e.Add("add", "f", ("a", cur), ("b", k));
+            }
+
+            e.OutId = cur;
+            e.Type = "f";
+            DA.SetData(0, new Colugo_ShaderExpr(e));
+        }
+    }
+
+    public class ShaderVectorComponent : ShaderBattery
+    {
+        public ShaderVectorComponent() : base("Shader Vector", "SVec",
+            "Compose three scalars into a vec3. Missing inputs become 0",
+            new Guid("5a0c7e10-2222-4b02-8d02-0000000000dc")) { }
+        protected override Bitmap Icon => Icons.ShaderVector;
+
+        protected override void RegisterInputParams(GH_InputParamManager p)
+        {
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "X", "X", "X component", GH_ParamAccess.item);
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Y", "Y", "Y component", GH_ParamAccess.item);
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Z", "Z", "Z component", GH_ParamAccess.item);
+            for (int i = 0; i < 3; i++) p[i].Optional = true;
+        }
+
+        protected override void RegisterOutputParams(GH_OutputParamManager p) =>
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Shader", "S", "vec3", GH_ParamAccess.item);
+
+        protected override void SolveInstance(IGH_DataAccess DA)
+        {
+            var x = In(DA, 0);
+            var y = In(DA, 1);
+            var z = In(DA, 2);
+            if (x == null && y == null && z == null)
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "三个分量都没接，输出零向量");
+            }
+
+            var e = NewExpr();
+            string Zero() => e.Add("const", "f", ("v", 0.0));
+            string xid, yid, zid;
+            if (x != null) { e.Absorb(x); xid = x.OutId; } else xid = Zero();
+            if (y != null) { e.Absorb(y); yid = y.OutId; } else yid = Zero();
+            if (z != null) { e.Absorb(z); zid = z.OutId; } else zid = Zero();
+
+            var id = e.Add("vec3", "v3", ("x", xid), ("y", yid), ("z", zid));
+            e.OutId = id;
+            e.Type = "v3";
             DA.SetData(0, new Colugo_ShaderExpr(e));
         }
     }

@@ -142,12 +142,21 @@ const c = await ev(`(() => {
   ], out: 'o' });
   const h1 = C.compile(mk(0.2)), h2 = C.compile(mk(0.9)), h3 = C.compile(mk(0.2));
   const hiVer = C.compile({ v: 99, nodes: [{ id: 'a', op: 'time' }], out: 'a' });
+  // 0.34 补的三个 op：swizzle 取分量、step 二分、vec3 合成
+  const vecG = C.compile({ v: 1, nodes: [
+    { id: 'p', op: 'position', space: 'local', ty: 'v3' },
+    { id: 's', op: 'swizzle', a: 'p', c: 'y', ty: 'f' },
+    { id: 'st', op: 'step', x: 's', e0: 0, ty: 'f' },
+    { id: 'v', op: 'vec3', x: 'st', y: 's', z: 0.5, ty: 'v3' },
+  ], out: 'v' });
   return {
     badOk: bad.node === null, badErr: bad.errors.join('|'),
     cycOk: cyc.node === null, cycErr: cyc.errors.join('|'),
     danglingOk: dangling.node === null, danglingErr: dangling.errors.join('|'),
     h1: h1.hash, h2: h2.hash, h3: h3.hash,
     hiVerOk: hiVer.node === null, hiVerErr: hiVer.errors.join('|'),
+    vecOk: !!vecG.node, vecType: vecG.outType, vecOps: vecG.ops || [],
+    vecErr: vecG.errors.join('|'),
   };
 })()`);
 
@@ -157,6 +166,9 @@ check('悬空引用被拒绝', c.danglingOk === true && /不存在的节点/.tes
 check('IR 版本高于运行时被拒绝', c.hiVerOk === true && /版本/.test(c.hiVerErr), c);
 check('同一张图两次编译得到同一哈希', c.h1 && c.h1 === c.h3, c);
 check('只改 uniform 值 → 哈希不变（S2 的缓存前提）', c.h1 && c.h1 === c.h2, c);
+check('swizzle / step / vec3 三个 op 能被编译',
+  c.vecOk && ['swizzle', 'step', 'vec3'].every((o) => c.vecOps.includes(o)), c);
+check('vec3 的输出类型是 v3', c.vecType === 'v3', c.vecType);
 
 /* ---------- 截图（人工看的证据，不作为断言） ---------- */
 const shot = await send('Page.captureScreenshot', { format: 'png' });

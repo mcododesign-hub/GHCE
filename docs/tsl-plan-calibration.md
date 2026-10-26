@@ -50,7 +50,7 @@ mat.colorNode = tsl.color(c);      // ← 常量色
 | `Shader Position` | **要做** | `positionLocal` → 节点，`Space` 枚举先只给 Local |
 | `Shader Normal` | **要做** | `normalLocal`；缺法线时要给可读诊断而不是崩 |
 | `Shader UV` | **要做** | 首版只 UV0，`Channel` 端口留着但只接受 0 |
-| `Shader Time` | **不做（复用）** | 已有 `Runtime Time` 电池 + Artwork Clock。绑成 `uTime` uniform 即可，再造一只会出现两个"时间" |
+| `Shader Time` | **要做（原判断已推翻）** | 我原本写"复用 `Runtime Time`"，实测是错的：它输出 `Colugo_Expr`（运行时 JS 求值的 AST），和 `ShaderExpr` 是两个类型，接上去 CastFrom 直接失败。表达式是每帧在 JS 里算，Shader 是每帧在 GPU 里算 —— 两个执行层，不能互换。0.34.1 已单独补 |
 | `Shader Math` | **要做** | Op 枚举，与现有 `Runtime Math` 的算子名保持一致，避免"两个 Remap 长得不一样" |
 | `Shader Vector` | **合并进 Math** | Split / Dot / Normalize 归到同一个 Op 枚举，省一只电池 |
 | `Shader Mix` | **要做** | 插值是渐变与位移的基础，且它需要类型推导（float/vec3 混插） |

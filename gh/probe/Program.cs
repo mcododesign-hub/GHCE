@@ -1215,6 +1215,9 @@ class Probe
             ("Colugo.Components.ShaderMathComponent", "Shader Math", 5, 1),
             ("Colugo.Components.ShaderMixComponent", "Shader Mix", 3, 1),
             ("Colugo.Components.ShaderColorComponent", "Shader Color", 4, 1),
+            ("Colugo.Components.ShaderSwizzleComponent", "Shader Swizzle", 2, 1),
+            ("Colugo.Components.ShaderTimeComponent", "Shader Time", 2, 1),
+            ("Colugo.Components.ShaderVectorComponent", "Shader Vector", 3, 1),
             ("Colugo.Components.ApplyMaterialComponent", "Apply Material", 2, 1),
         };
         foreach (var e in expected)
@@ -1285,6 +1288,28 @@ class Probe
                       && copy.Shader != null && copy.Shader.OutId == mix.OutId;
         Console.WriteLine($"  shader material: key-has-shader={keyOk} deep-copy={deepOk}");
         if (!keyOk || !deepOk) fail++;
+
+        // --- swizzle 的分量必须落到 c 字段（运行时按 'x'/'y'/'z' 取属性）---
+        var sw = new Colugo.Types.ShaderExprDef("ddd444");
+        var svid = sw.Add("swizzle", "f", ("a", pid), ("c", "y"));
+        sw.OutId = svid;
+        sw.Type = "f";
+        var swNode = sw.Nodes.First(n => n.Op == "swizzle");
+        bool swOk = swNode.Args.TryGetValue("c", out var cval) && Equals(cval, "y")
+                    && swNode.Args.TryGetValue("a", out var aval) && Equals(aval, pid);
+        Console.WriteLine($"  shader swizzle: a={swNode.Args.GetValueOrDefault("a")} c={cval} ok={swOk}");
+        if (!swOk) fail++;
+
+        // --- vec3 组合：三个分量都要发出去 ---
+        var vc = new Colugo.Types.ShaderExprDef("eee555");
+        var cid = vc.Add("const", "f", ("v", 0.25));
+        var vid = vc.Add("vec3", "v3", ("x", pid), ("y", cid), ("z", pid));
+        vc.OutId = vid;
+        vc.Type = "v3";
+        var vNode = vc.Nodes.First(n => n.Op == "vec3");
+        bool vecOk = vNode.Args.ContainsKey("x") && vNode.Args.ContainsKey("y") && vNode.Args.ContainsKey("z");
+        Console.WriteLine($"  shader vec3: keys=[{string.Join(",", vNode.Args.Keys)}] ok={vecOk}");
+        if (!vecOk) fail++;
 
         return fail;
     }

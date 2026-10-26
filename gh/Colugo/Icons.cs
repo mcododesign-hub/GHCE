@@ -139,6 +139,9 @@ namespace Colugo
         public static Bitmap ShaderMix => Get("sh-mix", DrawShaderMix);
         public static Bitmap ShaderColor => Get("sh-col", DrawShaderColor);
         public static Bitmap ApplyMaterial => Get("sh-apply", DrawApplyMaterial);
+        public static Bitmap ShaderSwizzle => Get("sh-swz", DrawShaderSwizzle);
+        public static Bitmap ShaderTime => Get("sh-time", DrawShaderTime);
+        public static Bitmap ShaderVector => Get("sh-vec", DrawShaderVector);
         public static Bitmap DataImage => Get("data-image", DrawDataImage);
 
         static Bitmap Get(string key, Action<Graphics> draw)
@@ -1537,6 +1540,53 @@ namespace Colugo
                 IsoCube(g, pen, 10.5f, 13.5f, 6.6f);
             using (var b = new SolidBrush(Color.FromArgb(0x90, Pink))) g.FillRectangle(b, 14.2f, 4.2f, 6f, 6f);
             using (var pen = new Pen(Pink, 1.4f)) g.DrawRectangle(pen, 14.2f, 4.2f, 6f, 6f);
+        }
+
+
+        static void DrawShaderSwizzle(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xA0, Ink), 1f))
+            {
+                g.DrawLine(pen, 6f, 19f, 6f, 7f);
+                g.DrawLine(pen, 6f, 19f, 18f, 19f);
+                g.DrawLine(pen, 6f, 19f, 13f, 12f);
+            }
+            // 三根虚轴里只有一根被选中：用粗 Pink 描出 x
+            using (var pen = new Pen(Pink, 2.2f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawLine(pen, 6f, 19f, 18f, 19f);
+            using (var b = new SolidBrush(Green)) g.FillEllipse(b, 14.6f, 15.6f, 5.6f, 5.6f);
+        }
+
+        static void DrawShaderTime(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xB8, Ink), 1.2f))
+                g.DrawEllipse(pen, 4.6f, 4.6f, 14.8f, 14.8f);
+            using (var pen = new Pen(Ink, 1.3f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                g.DrawLine(pen, 12f, 12f, 12f, 7.4f);
+                g.DrawLine(pen, 12f, 12f, 16f, 13.6f);
+            }
+            using (var b = new SolidBrush(Pink)) g.FillEllipse(b, 16.2f, 2.6f, 5f, 5f);
+        }
+
+        static void DrawShaderVector(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0x98, Ink), 1f))
+            {
+                g.DrawLine(pen, 7f, 17f, 18f, 17f);
+                g.DrawLine(pen, 7f, 17f, 7f, 6f);
+                g.DrawLine(pen, 7f, 17f, 15f, 9f);
+            }
+            using (var pen = new Pen(Green, 1.6f) { EndCap = LineCap.ArrowAnchor })
+            {
+                g.DrawLine(pen, 7f, 17f, 18.5f, 17f);
+                g.DrawLine(pen, 7f, 17f, 7f, 5.5f);
+                g.DrawLine(pen, 7f, 17f, 15.6f, 8.4f);
+            }
+            using (var b = new SolidBrush(Pink)) g.FillEllipse(b, 4.6f, 14.6f, 4.8f, 4.8f);
         }
 
     }

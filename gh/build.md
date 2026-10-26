@@ -1572,3 +1572,31 @@ IR 结构 / const id 稳定性 / Material 深拷贝）；`verify-shader.mjs` 18 
 
 安装：0.34.0，4,202,496 bytes，md5 `EDF3AEC1C73044AC54F78015375E59C9`。
 包：`dist/colugo-0.34.0-rh8_36-any.yak`，907,473 bytes，md5 `FD08B8A6B733D0B0EFA07B054FED207F`。
+
+### 0.34.1 补三只 S1 缺口的电池
+
+0.34.0 交付后立刻发现三个洞，都是"电池不齐"而不是"实现错了"：
+
+| 电池 | 为什么必须补 |
+|---|---|
+| `Shader Swizzle` | `Shader Position` 输出 vec3，但**没有任何电池能把 x 取出来**。运行时早有 `swizzle` op，GH 侧却没人产它 —— 用户拿到位置后什么都做不了 |
+| `Shader Time` | 同上，运行时早有 `time` op，GH 侧没电池。见下面那条被推翻的判断 |
+| `Shader Vector` | 反方向也缺：没法把三个标量拼成 vec3，构造不了方向 |
+
+**校准文档里"不做 Shader Time，复用 Runtime Time"这条判断是错的，已推翻。**
+实测 `Runtime Time` 输出的是 `Colugo_Expr`（运行时表达式 AST），和 `ShaderExpr` 是两个类型，
+接上去直接 CastFrom 失败。表达式是"每帧在 JS 里求值"，Shader 是"每帧在 GPU 里求值"，
+本来就是两个执行层 —— 任务书 §2 那张三行表说得很清楚，是我在校准的时候把它俩当成一回事了。
+
+运行时同时补三个 op：`vec2` / `vec3`（合成向量）、`step`（二分）。`step` 归到 `Shader Math`
+的第 17 号，所以 Math 现在是 20 个 op，dot/length/normalize 顺延到 18/19/20。
+
+`Shader Math` 的 remap 仍是 `A=x, B=in0, C=in1, D=out1`，out0 固定 0。
+
+安装：0.34.1，4,208,128 bytes，md5 `1E7DABA1AC58EE6F02E0D8A9372BA79D`。
+包：`dist/colugo-0.34.1-rh8_36-any.yak`，909,036 bytes，md5 `F20BF70B8A020A7295ED63CDE25AC54A`。
+
+验证：探针 PASS（11 只 Shader 电池 / 子图去重 / 命名空间隔离 / swizzle 的 c 字段 /
+vec3 的三个分量 / const id 稳定性）；`verify-shader.mjs` **20/20**（新增 swizzle+step+vec3 编译、
+vec3 输出类型）。
+全套：109 + 17 + 15 + 6 + 20 = **167 项**。
