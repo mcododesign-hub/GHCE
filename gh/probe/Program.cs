@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using Grasshopper.Kernel;
@@ -649,6 +650,9 @@ class Probe
 
             // ---------- v0.33 文字 / 图片 / 裁剪 → patch ----------
             fail += TestComposition();
+
+            // ---------- v0.34 Shader IR ----------
+            fail += TestShader();
         }
         catch (Exception ex)
         {
@@ -1188,6 +1192,101 @@ class Probe
             foreach (var c in fnt.GetConstructors())
                 Console.WriteLine("  .ctor(" + string.Join(", ", c.GetParameters().Select(x => x.ParameterType.Name + " " + x.Name)) + ")");
         }
+    }
+
+    // ================= v0.34 Shader IR =================
+
+    /// <summary>
+    /// Shader 侧最容易断的三处：
+    ///   1. 子图合并时节点 id 撞车 —— 两只下游电池各自并入同一上游，自增 id 会重复；
+    ///   2. Duplicate 是浅拷贝，改副本污染原件；
+    ///   3. const 节点的 id 掺了序号而不是值，哈希每次都变、材质每帧重建。
+    /// </summary>
+    static int TestShader()
+    {
+        int fail = 0;
+
+        var expected = new (string type, string name, int ins, int outs)[]
+        {
+            ("Colugo.Components.ShaderPositionComponent", "Shader Position", 1, 1),
+            ("Colugo.Components.ShaderNormalComponent", "Shader Normal", 1, 1),
+            ("Colugo.Components.ShaderUVComponent", "Shader UV", 0, 1),
+            ("Colugo.Components.ShaderUniformComponent", "Shader Uniform", 2, 1),
+            ("Colugo.Components.ShaderMathComponent", "Shader Math", 5, 1),
+            ("Colugo.Components.ShaderMixComponent", "Shader Mix", 3, 1),
+            ("Colugo.Components.ShaderColorComponent", "Shader Color", 4, 1),
+            ("Colugo.Components.ApplyMaterialComponent", "Apply Material", 2, 1),
+        };
+        foreach (var e in expected)
+        {
+            var t = typeof(Colugo.Components.ShaderPositionComponent).Assembly.GetType(e.type);
+            bool ok = t != null;
+            int ins = 0, outs = 0;
+            string shown = "missing";
+            if (ok)
+            {
+                var inst = (Grasshopper.Kernel.GH_Component)Activator.CreateInstance(t);
+                ins = inst.Params.Input.Count;
+                outs = inst.Params.Output.Count;
+                shown = inst.Name;
+                ok = shown == e.name && ins == e.ins && outs == e.outs && ins <= 6;
+            }
+            Console.WriteLine($"  shader battery {e.name,-16} ok={ok}  in={ins} out={outs}");
+            if (!ok) fail++;
+        }
+
+        // --- 子图合并：同一上游接两次只能有一份节点 ---
+        var pos = new Colugo.Types.ShaderExprDef("aaa111");
+        var pid = pos.Add("position", "v3", ("space", "local"));
+        pos.OutId = pid;
+        pos.Type = "v3";
+
+        var mix = new Colugo.Types.ShaderExprDef("bbb222");
+        mix.Absorb(pos);
+        mix.Absorb(pos);
+        var sinId = mix.Add("sin", "f", ("a", pid));
+        mix.OutId = sinId;
+        mix.Type = "f";
+        bool dedup = mix.Nodes.Count == 2;
+        Console.WriteLine($"  shader subgraph dedupe: nodes={mix.Nodes.Count} (expect 2)  ids=[{string.Join(",", mix.Nodes.Select(n => n.Id))}]");
+        if (!dedup) fail++;
+
+        // --- 不同电池的命名空间不撞 ---
+        var other = new Colugo.Types.ShaderExprDef("ccc333");
+        other.Absorb(pos);
+        var cosId = other.Add("cos", "f", ("a", pid));
+        bool nsOk = cosId.StartsWith("ccc333") && sinId.StartsWith("bbb222");
+        Console.WriteLine($"  shader id namespace: sin={sinId} cos={cosId} ok={nsOk}");
+        if (!nsOk) fail++;
+
+        // --- IR 结构 ---
+        var ir = mix.ToIR();
+        var nodesList = ir["nodes"] as List<Dictionary<string, object>>;
+        bool irOk = ir.ContainsKey("v") && (int)ir["v"] == 1 && Equals(ir["out"], sinId) && nodesList != null;
+        bool nodeFields = nodesList != null && nodesList.Count == 2
+                          && nodesList.All(d => d.ContainsKey("id") && d.ContainsKey("op"));
+        Console.WriteLine($"  shader IR: v={ir["v"]} out={ir["out"]} nodes={nodesList?.Count} fields-ok={nodeFields}");
+        if (!irOk || !nodeFields) fail++;
+
+        // --- const 节点 id 由值决定（同值同 id，哈希才稳）---
+        var c1 = Colugo.Types.Colugo_ShaderExpr.Const(0.5);
+        var c2 = Colugo.Types.Colugo_ShaderExpr.Const(0.5);
+        var c3 = Colugo.Types.Colugo_ShaderExpr.Const(0.7);
+        bool constOk = c1.OutId == c2.OutId && c1.OutId != c3.OutId
+                       && c1.Nodes.Count == 1 && c1.Nodes[0].Op == "const";
+        Console.WriteLine($"  shader const id: {c1.OutId} == {c2.OutId}, != {c3.OutId}  ok={constOk}");
+        if (!constOk) fail++;
+
+        // --- Material 的键包含 shader，Duplicate 是深拷贝 ---
+        var mat = new Colugo.Types.Material3DDef { Shader = mix };
+        var copy = mat.Duplicate();
+        bool keyOk = mat.Key().Contains("S:");
+        bool deepOk = !ReferenceEquals(copy.Shader, mat.Shader)
+                      && copy.Shader != null && copy.Shader.OutId == mix.OutId;
+        Console.WriteLine($"  shader material: key-has-shader={keyOk} deep-copy={deepOk}");
+        if (!keyOk || !deepOk) fail++;
+
+        return fail;
     }
 
     // ================= v0.33 文字 / 图片 / 裁剪 =================

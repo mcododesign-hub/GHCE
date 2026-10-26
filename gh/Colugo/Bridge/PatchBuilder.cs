@@ -693,6 +693,9 @@ namespace Colugo.Bridge
                     ["size"] = c.Material?.Size ?? 2,
                     ["glow"] = c.Material?.Glow ?? 0,
                     ["opacity"] = c.Material?.Opacity ?? 1,
+                    // null 时不发这个键的语义由运行时决定：它用 if (m.shader) 判断，
+                    // 所以老作品（没有 shader）走的还是常量色那条路
+                    ["shader"] = c.Material?.Shader?.ToIR(),
                 },
                 ["xform"] = new Dictionary<string, object>
                 {

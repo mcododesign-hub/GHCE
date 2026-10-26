@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -128,6 +128,17 @@ namespace Colugo
         public static Bitmap DataEvent => Get("data-evt", DrawDataEvent);
         public static Bitmap DataSignal => Get("data-sig", DrawDataSignal);
         public static Bitmap DataExpr => Get("data-expr", DrawDataExpr);
+        public static Bitmap DataShader => Get("data-shader", DrawDataShader);
+
+        // ---- 0.34 Shader ----
+        public static Bitmap ShaderPosition => Get("sh-pos", DrawShaderPosition);
+        public static Bitmap ShaderNormal => Get("sh-nrm", DrawShaderNormal);
+        public static Bitmap ShaderUV => Get("sh-uv", DrawShaderUV);
+        public static Bitmap ShaderUniform => Get("sh-uni", DrawShaderUniform);
+        public static Bitmap ShaderMath => Get("sh-math", DrawShaderMath);
+        public static Bitmap ShaderMix => Get("sh-mix", DrawShaderMix);
+        public static Bitmap ShaderColor => Get("sh-col", DrawShaderColor);
+        public static Bitmap ApplyMaterial => Get("sh-apply", DrawApplyMaterial);
         public static Bitmap DataImage => Get("data-image", DrawDataImage);
 
         static Bitmap Get(string key, Action<Graphics> draw)
@@ -1421,5 +1432,112 @@ namespace Colugo
             using (var pen = new Pen(Color.FromArgb(0x90, Pink), 1f))
                 g.DrawEllipse(pen, 3.8f, 9.8f, 6.6f, 6.6f);
         }
+
+        /* ---------------- 0.34 Shader ---------------- */
+
+        static void DrawDataShader(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Ink, 1.2f)) g.DrawLine(pen, 8f, 8f, 16f, 12f);
+            using (var pen = new Pen(Ink, 1.2f)) g.DrawLine(pen, 16f, 12f, 8.5f, 17f);
+            using (var b = new SolidBrush(Pink)) g.FillEllipse(b, 4.6f, 5.2f, 6f, 6f);
+            using (var b2 = new SolidBrush(Green)) g.FillEllipse(b2, 13.4f, 9.2f, 5.4f, 5.4f);
+            using (var b3 = new SolidBrush(Ink)) g.FillEllipse(b3, 5.4f, 14.2f, 5.2f, 5.2f);
+        }
+
+        static void DrawShaderPosition(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xB0, Ink), 1.1f))
+            {
+                g.DrawLine(pen, 6f, 18f, 18f, 18f);
+                g.DrawLine(pen, 6f, 18f, 6f, 6f);
+                g.DrawLine(pen, 6f, 18f, 11f, 13f);
+            }
+            using (var b = new SolidBrush(Pink)) g.FillEllipse(b, 9.4f, 9.4f, 6f, 6f);
+        }
+
+        static void DrawShaderNormal(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xA0, Ink), 1.1f) { LineJoin = LineJoin.Round })
+            using (var b = new SolidBrush(Color.FromArgb(0x28, Ink)))
+            {
+                var tri = new[] { new PointF(5f, 18f), new PointF(13f, 20f), new PointF(9f, 12f) };
+                g.FillPolygon(b, tri); g.DrawPolygon(pen, tri);
+            }
+            using (var pen = new Pen(Green, 1.5f) { EndCap = LineCap.ArrowAnchor })
+                g.DrawLine(pen, 10.5f, 14f, 16f, 5f);
+        }
+
+        static void DrawShaderUV(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xC8, Ink), 1f))
+            {
+                g.DrawRectangle(pen, 5f, 5f, 14f, 14f);
+                g.DrawLine(pen, 9.7f, 5f, 9.7f, 19f);
+                g.DrawLine(pen, 14.3f, 5f, 14.3f, 19f);
+                g.DrawLine(pen, 5f, 9.7f, 19f, 9.7f);
+                g.DrawLine(pen, 5f, 14.3f, 19f, 14.3f);
+            }
+            using (var b = new SolidBrush(Color.FromArgb(0x88, Pink))) g.FillRectangle(b, 9.7f, 5f, 4.6f, 4.7f);
+        }
+
+        static void DrawShaderUniform(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xB0, Ink), 1.2f))
+            {
+                g.DrawLine(pen, 6f, 7.5f, 18f, 7.5f);
+                g.DrawLine(pen, 6f, 12f, 18f, 12f);
+                g.DrawLine(pen, 6f, 16.5f, 18f, 16.5f);
+            }
+            using (var b = new SolidBrush(Pink)) g.FillEllipse(b, 12.4f, 4.6f, 5.8f, 5.8f);
+            using (var b2 = new SolidBrush(Green)) g.FillEllipse(b2, 6f, 9.1f, 5.6f, 5.6f);
+            using (var b3 = new SolidBrush(Ink)) g.FillEllipse(b3, 9.6f, 13.7f, 5.4f, 5.4f);
+        }
+
+        static void DrawShaderMath(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0x90, Ink), 1f))
+                g.DrawLine(pen, 4f, 12f, 20f, 12f);
+            using (var path = new GraphicsPath())
+            {
+                path.AddBezier(4f, 12f, 7f, 3f, 10f, 3f, 12f, 12f);
+                path.AddBezier(12f, 12f, 14f, 21f, 17f, 21f, 20f, 12f);
+                using (var pen = new Pen(Pink, 1.7f)) g.DrawPath(pen, path);
+            }
+        }
+
+        static void DrawShaderMix(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xB0, Ink), 1.1f))
+                g.DrawEllipse(pen, 4.5f, 7f, 10f, 10f);
+            using (var pen2 = new Pen(Color.FromArgb(0xB0, Ink), 1.1f))
+                g.DrawEllipse(pen2, 9.5f, 7f, 10f, 10f);
+            using (var b = new SolidBrush(Color.FromArgb(0x70, Pink))) g.FillEllipse(b, 4.5f, 7f, 10f, 10f);
+            using (var b2 = new SolidBrush(Color.FromArgb(0x70, Green))) g.FillEllipse(b2, 9.5f, 7f, 10f, 10f);
+        }
+
+        static void DrawShaderColor(Graphics g)
+        {
+            Tile24(g);
+            using (var b = new SolidBrush(Pink)) g.FillEllipse(b, 6f, 4.6f, 7.6f, 7.6f);
+            using (var b2 = new SolidBrush(Green)) g.FillEllipse(b2, 12.6f, 9.4f, 7f, 7f);
+            using (var b3 = new SolidBrush(Color.FromArgb(0xE0, Ink))) g.FillEllipse(b3, 4.4f, 12.2f, 6.4f, 6.4f);
+        }
+
+        static void DrawApplyMaterial(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Color.FromArgb(0xB8, Ink), 1.1f) { LineJoin = LineJoin.Round })
+                IsoCube(g, pen, 10.5f, 13.5f, 6.6f);
+            using (var b = new SolidBrush(Color.FromArgb(0x90, Pink))) g.FillRectangle(b, 14.2f, 4.2f, 6f, 6f);
+            using (var pen = new Pen(Pink, 1.4f)) g.DrawRectangle(pen, 14.2f, 4.2f, 6f, 6f);
+        }
+
     }
 }

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- Rhino 8 的插件运行时是 .NET 7。
@@ -14,7 +14,7 @@
     <UseWPF>true</UseWPF>
     <AssemblyName>Colugo</AssemblyName>
     <RootNamespace>Colugo</RootNamespace>
-    <Version>0.33.0</Version>
+    <Version>0.34.0</Version>
     <Title>Colugo · Grasshopper Creative Engine</Title>
     <Description>把 Grasshopper 定义为创意编程前端，浏览器为执行环境。</Description>
     <NoWarn>$(NoWarn);NETSDK1138</NoWarn>

@@ -1524,3 +1524,51 @@ SVG 侧转 `<clipPath>`，PNG 与 SVG 的边界误差 < 1px（已断言）。
 
 验证：verify **109/109** + verify-3d **17/17** + replay-csharp **15/15** + replay-3d **6/6** = 147 项；
 探针 `RESULT: PASS`（50 只电池 / 63 GUID 唯一 / 14 数据类型）。
+
+### 0.34.0 S1：Shader IR 落地（运行时 + 8 只电池）
+
+**IR 是「扁平节点表 + 连接表」，不是嵌套 JSON。** 理由：增量更新要按节点 id 做 diff，
+嵌套结构一旦内层变就得整树重发；扁平表可以只发改动的节点。代价是运行时要做一次拓扑求值
+—— 但 GH 侧本来就要拒绝循环依赖，这笔账逃不掉。
+
+```json
+{ "v": 1,
+  "nodes": [ {"id":"a_0","op":"position","space":"local","ty":"v3"},
+             {"id":"a_1","op":"sin","a":"a_0","ty":"f"} ],
+  "out": "a_1" }
+```
+
+**8 只电池，不是校准文档里写的 9 只。** `TSL Material` 砍掉了：Material 现在只有
+`colorNode` 一个插槽，再做一只"只传一个字段"的电池是空壳，用户会问这两只有什么区别。
+等 S3 加上 `positionNode` / `normalNode`，Material 有 3–4 个插槽了才值得抽象。
+`Apply Material` 直接收 `ShaderExpr`，够用。
+
+| 电池 | 输入 | 输出 | 备注 |
+|---|---|---|---|
+| `Shader Position` | Space(1 local·2 world) | Expr v3 | |
+| `Shader Normal` | Space | Expr v3 | |
+| `Shader UV` | — | Expr v2 | 首版只 UV0 |
+| `Shader Uniform` | Name, Value | Expr f | 只做 float，vec3 uniform 留到 S2 |
+| `Shader Math` | Op, A, B, C, D | Expr | 19 个 op 一只电池通吃；remap 用 A/B/C/D |
+| `Shader Mix` | A, B, Factor | Expr | |
+| `Shader Color` | Mode, R/H, G/S, B/L | Expr v3 | HSL 在 GH 侧转 RGB，运行时只认 vec3 |
+| `Apply Material` | Commands, Shader | Commands | 没接 Shader 时原样透传 |
+
+**三个设计决定，都是踩过才定的：**
+
+1. **节点 id 带电池命名空间**（`InstanceGuid` 前 6 位）。第一版用全局自增 `n0/n1`，
+   结果两只下游电池各自并入同一上游后 id 撞在一起，合并进 Mix 时运行时报重复 id。
+2. **const 节点的 id 由值决定**（`k_0_5` / `k_0_7`），不是序号 —— 否则每次求解哈希都变。
+3. **`ShaderExpr` 端口可以直接接数字**（`CastFrom(double)`）。sin 的入参乘个系数是最常见的
+   用法，让用户为此专门拉一只常量电池是设计缺陷。
+
+运行时侧见 `runtime/src/shader.js`：白名单分发不 eval、环检测、类型推断（f/v2/v3）、
+`uTime` 走自己的 uniform（导出要能暂停跳帧倍速）、有 time 节点就置 `_shaderAnimated`。
+
+**验证**：探针 `RESULT: PASS`，新增 13 项（8 只电池的端口 / 子图去重 / 命名空间隔离 /
+IR 结构 / const id 稳定性 / Material 深拷贝）；`verify-shader.mjs` 18 项（白名单拒绝未知 op /
+环依赖 / 悬空引用 / IR 版本过高 / 同图同哈希 / **只改 uniform 值哈希不变** / 输出类型 v3）。
+全套回归仍是 147 项原样。
+
+安装：0.34.0，4,202,496 bytes，md5 `EDF3AEC1C73044AC54F78015375E59C9`。
+包：`dist/colugo-0.34.0-rh8_36-any.yak`，907,473 bytes，md5 `FD08B8A6B733D0B0EFA07B054FED207F`。

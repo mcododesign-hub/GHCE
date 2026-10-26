@@ -70,9 +70,25 @@ namespace Colugo.Types
         public double Glow = 0.0;        // emissive intensity, 0..2
         public double Opacity = 1.0;
 
-        public Material3DDef Duplicate() => (Material3DDef)MemberwiseClone();
+        /// <summary>
+        /// 0.34：colorNode 的 Shader 子图。null 时走原来的常量色路径 ——
+        /// 旧定义一行都不用改，这是 TSL 接入"最小侵入"的前提。
+        /// </summary>
+        public ShaderExprDef Shader;
 
-        public string Key() => $"{Mode}|{Color}|{Size:0.####}|{Glow:0.####}|{Opacity:0.####}";
+        public Material3DDef Duplicate() => new Material3DDef
+        {
+            Mode = Mode,
+            Color = Color,
+            Size = Size,
+            Glow = Glow,
+            Opacity = Opacity,
+            Shader = Shader?.Duplicate(),
+        };
+
+        public string Key() =>
+            $"{Mode}|{Color}|{Size:0.####}|{Glow:0.####}|{Opacity:0.####}" +
+            (Shader == null ? "" : "|S:" + Shader.Key());
     }
 
     /// <summary>
