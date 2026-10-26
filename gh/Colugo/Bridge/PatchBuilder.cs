@@ -748,6 +748,8 @@ namespace Colugo.Bridge
                     // null 时不发这个键的语义由运行时决定：它用 if (m.shader) 判断，
                     // 所以老作品（没有 shader）走的还是常量色那条路
                     ["shader"] = c.Material?.Shader?.ToIR(),
+                    // 顶点偏移图。null 时运行时不动 positionNode，走原来的静态几何
+                    ["shaderDisplace"] = c.Material?.ShaderDisplace?.ToIR(),
                 },
                 ["xform"] = new Dictionary<string, object>
                 {

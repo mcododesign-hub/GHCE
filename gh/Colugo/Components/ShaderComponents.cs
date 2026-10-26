@@ -548,8 +548,16 @@ namespace Colugo.Components
         {
             p.AddParameter(new Param_Colugo_Cmd3D(), "Commands", "C", "3D commands from Draw 3D",
                 GH_ParamAccess.list);
-            p.AddParameter(new Param_Colugo_ShaderExpr(), "Shader", "S",
-                "Colour graph. Leave empty to keep the constant colour", GH_ParamAccess.item);
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Colour", "C",
+                "Colour graph (v3). Leave empty to keep the constant colour", GH_ParamAccess.item);
+            // 0.36：顶点偏移。语义是"局部空间位移"，运行时算 positionLocal + 这张图 ——
+            // 不是直接替换 positionNode。直接替换的话用户接一个 sin 波，几何会整体塌到原点。
+            p.AddParameter(new Param_Colugo_ShaderExpr(), "Displace", "D",
+                "Vertex offset in local space (v3). Empty = no displacement. "
+                + "Note: camera framing uses the ORIGINAL mesh bounds, so a large offset "
+                + "can push geometry out of frame", GH_ParamAccess.item);
+            p[1].Optional = true;
+            p[2].Optional = true;
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p) =>
@@ -565,19 +573,29 @@ namespace Colugo.Components
                 return;
             }
 
-            var shader = In(DA, 1);
-            if (shader == null || !shader.IsValid)
+            var colour = In(DA, 1);
+            var disp = In(DA, 2);
+
+            if (colour != null && colour.IsValid && colour.Type != "v3")
             {
-                // 没接 shader 就原样透传，而不是报错 —— 用户可以先搭好链路再上 Shader
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "没有接 Shader，命令原样透传");
-                DA.SetDataList(0, cmds);
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    $"Colour 输出是 {colour.Type}，颜色槽要的是 v3。用 Shader Color 或 Mix 收口。");
+                return;
+            }
+            if (disp != null && disp.IsValid && disp.Type != "v3")
+            {
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
+                    $"Displace 输出是 {disp.Type}，顶点偏移要的是 v3。用 Shader Vector 或 Normal 收口。");
                 return;
             }
 
-            if (shader.Type != "v3")
+            bool hasColour = colour != null && colour.IsValid;
+            bool hasDisp = disp != null && disp.IsValid;
+            if (!hasColour && !hasDisp)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error,
-                    $"Shader 输出是 {shader.Type}，颜色槽要的是 v3。用 Shader Color 或 Mix 收口。");
+                // 两个都没接就原样透传，而不是报错 —— 用户可以先搭好链路再上 Shader
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Remark, "没接 Shader，命令原样透传");
+                DA.SetDataList(0, cmds);
                 return;
             }
 
@@ -588,7 +606,8 @@ namespace Colugo.Components
                 if (src == null) continue;
                 var copy = src.Duplicate();
                 if (copy.Material == null) copy.Material = new Material3DDef();
-                copy.Material.Shader = shader.Duplicate();
+                if (hasColour) copy.Material.Shader = colour.Duplicate();
+                if (hasDisp) copy.Material.ShaderDisplace = disp.Duplicate();
                 outCmds.Add(new Colugo_Cmd3D(copy));
             }
             DA.SetDataList(0, outCmds);

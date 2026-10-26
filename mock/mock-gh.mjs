@@ -1123,6 +1123,78 @@ function sceneShader3D() {
 
 
 
+/* ---------------- v0.36：顶点位移（S3）---------------- */
+
+const SHADER_IR_FLAT = {
+  v: 1,
+  nodes: [{ id: 'c', op: 'const', v: [0.15, 0.55, 0.95], ty: 'v3' }],
+  out: 'c',
+};
+
+/** z = sin(x * 0.09 + time) * 12 —— 波纹会随时间沿 x 方向跑 */
+const SHADER_IR_DISP = {
+  v: 1,
+  nodes: [
+    { id: 'p', op: 'position', space: 'local' },
+    { id: 'px', op: 'swizzle', a: 'p', c: 'x', ty: 'f' },
+    { id: 'k', op: 'const', v: 0.09, ty: 'f' },
+    { id: 'mm', op: 'mul', a: 'px', b: 'k', ty: 'f' },
+    { id: 'tm', op: 'time', ty: 'f' },
+    { id: 'ad', op: 'add', a: 'mm', b: 'tm', ty: 'f' },
+    { id: 'sn', op: 'sin', a: 'ad', ty: 'f' },
+    { id: 'amp', op: 'const', v: 12.0, ty: 'f' },
+    { id: 'zz', op: 'mul', a: 'sn', b: 'amp', ty: 'f' },
+    { id: 'zero', op: 'const', v: 0.0, ty: 'f' },
+    { id: 'vv', op: 'vec3', x: 'zero', y: 'zero', z: 'zz', ty: 'v3' },
+  ],
+  out: 'vv',
+};
+
+function sceneShaderDisplace() {
+  const grid = buildGrid(28, 160, 4);
+  return {
+    canvas: { w: W, h: H, bg: '#07070a', dpr: 'auto', clearMode: 'clear' },
+    layers: [],
+    geoms: new Map(),
+    cmds: [],
+    entities: [],
+    scene3d: {
+      bg: '#07070a',
+      lights: false,
+      ambient: 1,
+      camera: null,
+      meshes: [
+        {
+          id: 'm_dgrid',
+          positions: b64f32(grid.pos),
+          indices: b64u32(grid.idx),
+          count: grid.pos.length / 3,
+          tris: grid.idx.length / 3,
+        },
+      ],
+      cmds: [
+        {
+          id: 'c3_disp',
+          mesh: 'm_dgrid',
+          material: {
+            mode: 5,
+            color: '#e8e6df',
+            size: 2,
+            glow: 0,
+            opacity: 1,
+            shader: SHADER_IR_FLAT,
+            shaderDisplace: SHADER_IR_DISP,
+          },
+          xform: { matrix: b64f32(rotZ(28, 18, 0, 0)), frames: null, n: 0 },
+          visible: true,
+          order: 0,
+        },
+      ],
+      objects: ['c3_disp'],
+    },
+  };
+}
+
 /* ---------------- 场景注册 ---------------- */
 
 const SCENES = {
@@ -1134,6 +1206,7 @@ const SCENES = {
   morph: { build: sceneMorph, tick: null, hz: 0 },
   scene3d: { build: scene3D, tick: null, hz: 0 },
   shader3d: { build: sceneShader3D, tick: null, hz: 0 },
+  shaderdisplace: { build: sceneShaderDisplace, tick: null, hz: 0 },
   binding: { build: sceneBinding, tick: null, hz: 0 },
   marks: { build: sceneMarks, tick: null, hz: 0 },
   behavior: { build: sceneBehavior, tick: null, hz: 0 },

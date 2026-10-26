@@ -76,6 +76,13 @@ namespace Colugo.Types
         /// </summary>
         public ShaderExprDef Shader;
 
+        /// <summary>
+        /// 0.36：顶点偏移（局部空间，vec3）。运行时算的是 positionLocal + 这张图，
+        /// 不是直接替换 positionNode —— 直接替换的话用户接一个 sin 波，几何会整体塌到原点。
+        /// 语义定成"偏移"，接上去就是膨胀/波动，符合直觉。
+        /// </summary>
+        public ShaderExprDef ShaderDisplace;
+
         public Material3DDef Duplicate() => new Material3DDef
         {
             Mode = Mode,
@@ -84,16 +91,19 @@ namespace Colugo.Types
             Glow = Glow,
             Opacity = Opacity,
             Shader = Shader?.Duplicate(),
+            ShaderDisplace = ShaderDisplace?.Duplicate(),
         };
 
         public string Key() =>
             $"{Mode}|{Color}|{Size:0.####}|{Glow:0.####}|{Opacity:0.####}" +
-            (Shader == null ? "" : "|S:" + Shader.Key());
+            (Shader == null ? "" : "|S:" + Shader.Key()) +
+            (ShaderDisplace == null ? "" : "|D:" + ShaderDisplace.Key());
 
         /// <summary>结构键：shader 部分剔除 uniform 值，其余同上。</summary>
         public string StructKey() =>
             $"{Mode}|{Color}|{Size:0.####}|{Glow:0.####}|{Opacity:0.####}" +
-            (Shader == null ? "" : "|S:" + Shader.StructKey());
+            (Shader == null ? "" : "|S:" + Shader.StructKey()) +
+            (ShaderDisplace == null ? "" : "|D:" + ShaderDisplace.StructKey());
     }
 
     /// <summary>

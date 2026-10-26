@@ -1644,3 +1644,35 @@ diff 逻辑：完整键相同 → 跳过；结构键相同 → 只发 `shader.un
 验证：探针新增 1 项（首帧全量 / 只改值发增量 / 改结构回全量，三段都判真假）；
 `verify-shader` **23/23**（新增 shader.uniform op 真的改值、不重编译、不新建材质）。
 全套：109 + 17 + 15 + 6 + 23 + 11 = **181 项**。
+
+### 0.36.0 S3：GPU 顶点位移
+
+`Apply Material` 多一个端口 `Displace`，几何开始能在 GPU 上变形，GH 不用每帧输出 Morph 帧。
+
+**语义定成"偏移"而不是"位置"，这是这一版最重要的决定。**
+`positionNode` 是**绝对**位置：用户接一个 `sin(position.x)`，几何会整体塌到原点附近，
+看起来像"炸了"。所以运行时算的是 `positionLocal.add(图)` —— 接上去就是膨胀、起伏、波动，
+符合"顶点位移"的直觉。代价是没法用 shader 绝对定位顶点，但那本来就该用 GH 的变换做。
+
+| 改动 | 位置 |
+|---|---|
+| `Material3DDef.ShaderDisplace` | `Scene3D_Types.cs`，Key 加 `\|D:` 段，Duplicate 深拷贝 |
+| `Apply Material` 加 `Displace` 端口 | 2 输入 → 3 输入（端口 1 仍是颜色，旧定义不受影响） |
+| `material.shaderDisplace` 进 patch | `PatchBuilder.Cmd3DPayload` |
+| `mat.positionNode = positionLocal + 图` | `scene3d._material()` |
+
+**只对网格生效**：点云和线没有面可推，硬套 positionNode 会炸拓扑。判断条件是
+`kind === 'mesh' && mode !== 3`（mode 3 是 points，虽然 kind 是 mesh，材质却是 PointsNodeMaterial）。
+
+**一个必须让用户知道的边界**：相机取景按**原始 mesh 的包围盒**算，GPU 位移不会更新它。
+位移幅度大时几何会出框 —— 截图里那张波浪就是被裁掉了一截。这不是 bug，任务书 §4.2
+警告过同一件事（"顶点在 GPU 位移后，RhinoCommon 包围盒不会自动更新"）。
+已经把这句话写进 `Displace` 端口的描述里，鼠标悬停就能看到。
+
+安装：0.36.0，4,212,736 bytes，md5 `99276AFCA4DA6C3CC053A5BEB41362E6`。
+包：`dist/colugo-0.36.0-rh8_36-any.yak`，910,907 bytes，md5 `7210266A4324EE514E023B9F9CD52F4C`。
+
+验证：探针新增 1 项（键带 D 段 + 深拷贝不共享引用）；`verify-shader` **30/30**
+（新增 7 项：positionNode 被设置 / 颜色与位移两张图的哈希都进键 / 位移图用到 vec3+sin+swizzle /
+位移图有 time 就逐帧 / 位移编译无错）。
+全套：109 + 17 + 15 + 6 + 30 + 11 = **188 项**。

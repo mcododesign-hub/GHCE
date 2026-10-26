@@ -1218,7 +1218,7 @@ class Probe
             ("Colugo.Components.ShaderSwizzleComponent", "Shader Swizzle", 2, 1),
             ("Colugo.Components.ShaderTimeComponent", "Shader Time", 2, 1),
             ("Colugo.Components.ShaderVectorComponent", "Shader Vector", 3, 1),
-            ("Colugo.Components.ApplyMaterialComponent", "Apply Material", 2, 1),
+            ("Colugo.Components.ApplyMaterialComponent", "Apply Material", 3, 1),
         };
         foreach (var e in expected)
         {
@@ -1288,6 +1288,20 @@ class Probe
                       && copy.Shader != null && copy.Shader.OutId == mix.OutId;
         Console.WriteLine($"  shader material: key-has-shader={keyOk} deep-copy={deepOk}");
         if (!keyOk || !deepOk) fail++;
+
+        // --- 0.36 顶点位移：键要带 D: 段，深拷贝不能共享引用 ---
+        var dispG = new Colugo.Types.ShaderExprDef("fff666");
+        var dv = dispG.Add("vec3", "v3", ("x", 0.0), ("y", 0.0), ("z", 1.0));
+        dispG.OutId = dv;
+        dispG.Type = "v3";
+        var matD = new Colugo.Types.Material3DDef { Shader = mix, ShaderDisplace = dispG };
+        var copyD = matD.Duplicate();
+        bool dKey = matD.Key().Contains("|D:") && matD.StructKey().Contains("|D:");
+        bool dDeep = !ReferenceEquals(copyD.ShaderDisplace, matD.ShaderDisplace)
+                     && copyD.ShaderDisplace != null
+                     && copyD.ShaderDisplace.OutId == dv;
+        Console.WriteLine($"  shader displace: key-has-D={dKey} deep-copy={dDeep}");
+        if (!dKey || !dDeep) fail++;
 
         // --- swizzle 的分量必须落到 c 字段（运行时按 'x'/'y'/'z' 取属性）---
         var sw = new Colugo.Types.ShaderExprDef("ddd444");

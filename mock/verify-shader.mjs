@@ -191,7 +191,51 @@ check('swizzle / step / vec3 三个 op 能被编译',
   c.vecOk && ['swizzle', 'step', 'vec3'].every((o) => c.vecOps.includes(o)), c);
 check('vec3 的输出类型是 v3', c.vecType === 'v3', c.vecType);
 
-/* ---------- 截图（人工看的证据，不作为断言） ---------- */
+/* ---------- S3：顶点位移（positionNode）---------- */
+const d = await ev(`(async () => {
+  const G = window.Colugo;
+  G.selectScene('shaderdisplace');
+  const t0 = performance.now();
+  while (performance.now() - t0 < 20000) {
+    const S = G.scene3d;
+    if (S && S.backend && S.materials.size >= 1 && S.shader.stats.builds >= 2) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  await new Promise(r => setTimeout(r, 500));
+  const S = G.scene3d;
+  // 3D→3D 切场景时 mock 不清空（真实 GH 里 scene3d 也是持续的），
+  // 所以这里可能有上一场残留的材质 —— 必须遍历找"带 positionNode 的那份"，不能取 keys[0]。
+  const mats = [...S.materials.entries()].map(([k, mv]) => ({
+    key: k,
+    color: !!(mv && mv.colorNode),
+    pos: !!(mv && mv.positionNode),
+  }));
+  const dispMat = mats.find((m) => m.pos) || null;
+  return {
+    objects: S.stats().objects,
+    tris: S.stats().tris,
+    matCount: mats.length,
+    mats,
+    key: dispMat ? dispMat.key : '',
+    hasColorNode: dispMat ? dispMat.color : false,
+    hasPositionNode: !!dispMat,
+    ops: S.shader.lastOps || [],
+    animated: !!S._shaderAnimated,
+    err: S.lastShaderError || '',
+  };
+})()`);
+
+check('位移场景就绪（网格进了场景）', d.objects >= 1 && d.tris > 1000, d);
+check('顶点位移生效：有材质带上了 positionNode', d.hasPositionNode === true, d.mats);
+check('那份材质同时也带颜色节点', d.hasColorNode === true, d.key);
+check('位移图用到 vec3 / sin / swizzle',
+  ['vec3', 'sin', 'swizzle'].every((o) => d.ops.includes(o)), d.ops);
+check('位移图里有 time → 场景逐帧渲染', d.animated === true, d.animated);
+check('颜色与位移两张图的哈希都进了材质键',
+  (d.key.match(/[0-9a-f]{8}/g) || []).length >= 2, d.key);
+check('位移编译没有报错', !d.err, d.err);
+
+/* ---------- 截图：像素证据 ---------- */
 const shot = await send('Page.captureScreenshot', { format: 'png' });
 if (shot.data) {
   const { writeFileSync } = await import('node:fs');

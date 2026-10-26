@@ -350,7 +350,23 @@ export class Scene3D {
       }
     }
 
-    const key = `${kind}|${m.mode}|${m.color}|${m.size}|${m.glow}|${m.opacity}|${shaderHash}`;
+    // 顶点偏移：0.36。语义是"局部空间位移"，所以算 positionLocal + 图，
+    // 而不是直接拿图当 positionNode —— 后者会让用户接一个 sin 波就把几何塌到原点。
+    let dispNode = null;
+    let dispHash = '';
+    if (m.shaderDisplace) {
+      const r = this.shader.compile(m.shaderDisplace);
+      if (r.node) {
+        dispNode = r.node;
+        dispHash = r.hash;
+        if (r.uniforms && r.uniforms.includes('uTime')) this._shaderAnimated = true;
+      } else {
+        this.lastShaderError = r.errors.join('; ');
+        console.warn('[scene3d] 顶点偏移编译失败，跳过位移：', r.errors);
+      }
+    }
+
+    const key = `${kind}|${m.mode}|${m.color}|${m.size}|${m.glow}|${m.opacity}|${shaderHash}|${dispHash}`;
     const hit = this.materials.get(key);
     if (hit) return hit;
 
@@ -420,6 +436,13 @@ export class Scene3D {
     mat.transparent = (m.opacity != null && m.opacity < 1);
     mat.opacity = m.opacity == null ? 1 : m.opacity;
     if (mat.transparent) mat.depthWrite = false;
+
+    // 顶点位移只对网格成立：点云和线没有"面"可推，强行套 positionNode 只会炸掉拓扑。
+    // mode 3 是 points（虽然 kind 是 mesh，材质却是 PointsNodeMaterial）。
+    const displaceable = kind === 'mesh' && m.mode !== 3;
+    if (dispNode && displaceable) {
+      mat.positionNode = tsl.positionLocal.add(dispNode);
+    }
 
     this.materials.set(key, mat);
     return mat;
