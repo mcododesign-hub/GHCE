@@ -1,4 +1,4 @@
-// scene3d.js — 三维层
+﻿// scene3d.js — 三维层
 //
 // 职责边界：只负责把协议里的 mesh / cmd3d / scene3d 变成 Three.js 对象并画出来。
 // 不做任何解析、不做差分、不认识 GH。所有增量判断都在 C# 的 PatchBuilder 里。
@@ -388,6 +388,10 @@ export class Scene3D {
       mat = new THREE.PointsNodeMaterial();
       mat.colorNode = colorNode;
       mat.size = m.size || 2;
+      // 点大小在 WebGPU 下改不了：WGSL 的 point-list 固定 1 像素，
+      // mat.size 和 sizeNode 都不生效。three 的注释（three.webgpu.js:29584）说得很清楚：
+      // 只有用 Sprite 渲染点才 honored。保留这行是为了将来切 Sprite 路径时有地方挂尺寸。
+      mat.sizeNode = tsl.float(m.size || 2);
       mat.sizeAttenuation = false;
       mat.transparent = (m.opacity != null && m.opacity < 1);
       mat.opacity = m.opacity == null ? 1 : m.opacity;
@@ -405,6 +409,7 @@ export class Scene3D {
         mat = new THREE.PointsNodeMaterial();
         mat.colorNode = colorNode;
         mat.size = m.size || 2;
+        mat.sizeNode = tsl.float(m.size || 2);
         mat.sizeAttenuation = false;
         break;
       }

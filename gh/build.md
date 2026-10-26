@@ -1676,3 +1676,28 @@ diff 逻辑：完整键相同 → 跳过；结构键相同 → 只发 `shader.un
 （新增 7 项：positionNode 被设置 / 颜色与位移两张图的哈希都进键 / 位移图用到 vec3+sin+swizzle /
 位移图有 time 就逐帧 / 位移编译无错）。
 全套：109 + 17 + 15 + 6 + 30 + 11 = **188 项**。
+
+### 3D 的点大小 / 线宽为什么调不了（诊断，非 bug 修复）
+
+现象：`Draw 3D` 的 `Size` 对 `Mode=2`（线）和 `Mode=3`（点）完全无效，一直是 1px。
+
+**根因是 WebGPU 规范，不是参数没接上。**
+
+- WGSL 的 `point-list` 原语固定 1 像素大小；`line-list` 同理。
+- three 的注释（`three.webgpu.js:29584`）原文：*"By rendering point primitives with **Sprites**.
+  In this case, size is honored."* —— 默认 point primitive 不 honored。
+- 源码 `29564`：`pointSize = sizeNode !== null ? vec2(sizeNode) : materialPointSize`，
+  但这行只在能生效的路径上才有意义。
+- 我们的代码里 `kind === 'lines'` 和 `MODE.WIRE` 两个分支**从来没设过 linewidth**，
+  所以"线宽无效"甚至连参数都没传；但即使传了，WGSL 也不会认。
+
+**实测证据**：`mock` 的 `pointsizes` 场景放了三组同样的点云，Size = 4 / 12 / 28，
+渲染出来三组一样大。加 `sizeNode` 之后仍然一样大 —— 这条路径本身就不成立。
+
+**要真修等于换渲染路径**：把点/线几何化成 quad（每点一个 billboard 四边形、每线段一个
+沿方向展开的四边形），再在 TSL 顶点着色器里按屏幕像素展开。这是 Line2 那套做法，
+但 `vendor/` 里没有 addons，得自己写。会改变 points/lines 的渲染路径，
+`verify-3d` 的 17 项断言要跟着重写，所以单独立项，不塞进小版本。
+
+**当前可用的替代**：2D 的 `Mark` / `Draw Path` 有真实的线宽（Canvas 2D 没这个限制），
+所以"要粗细"的需求在二维那一层是满足的；三维的点和线暂时只能 1px。

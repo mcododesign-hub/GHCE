@@ -182,6 +182,12 @@ dotnet run -c Release
   同路径 + 同 `Max Size` 的图只读一次盘。
 - **`Clip` 的模具是页面坐标**，在指令 `transform` 之前落剪。反过来写会让裁剪框跟着图转，
   表现是"裁歪了"。一个指令只能有一个 clip，后接的覆盖前一个。
+- **3D 的点大小与线宽调不了**——这不是 bug，是 WebGPU 的能力边界。WGSL 的 `point-list`
+  和 `line-list` 原语固定 1 像素，`mat.size` / `sizeNode` / `linewidth` 全部无效。
+  three 自己的注释（`three.webgpu.js:29584`）说得很清楚：只有用 **Sprite** 渲染点，
+  尺寸才会被尊重。要真的可调，得把点/线几何化成 quad（每点/每段一个 billboard 四边形），
+  那是换渲染路径，不是调参数。`Draw 3D` 的 `Size` 参数目前只对 `Mode=2` 的线宽**无效**、
+  对 `Mode=3` 的点大小**无效**，留着是为了将来切到几何化路径时不用改端口。
 - **`Draw Path` 有 10 个输入**，超过"≤6"的约定。用户明确要求保持原样，不要擅自拆。
 
 ---

@@ -1195,6 +1195,66 @@ function sceneShaderDisplace() {
   };
 }
 
+/* ---------------- v0.37：Size 参数回归（点大小 / 线宽）---------------- */
+
+/**
+ * 三组形状相同的点云，Size 分别是 4 / 12 / 28 并排。
+ * 这张图就是"Size 到底生不生效"的判据 —— 之前 WebGPU 后端不读 mat.size，
+ * 三组会画成一样粗，肉眼看就知道。
+ */
+function scenePointSizes() {
+  const mkCloud = (cx) => {
+    const pos = [];
+    for (let i = 0; i < 60; i++) {
+      const a = i * 0.42;
+      const r = 6 + i * 0.55;
+      pos.push(cx + Math.cos(a) * r, Math.sin(a) * r, Math.sin(a * 2) * 6);
+    }
+    return pos;
+  };
+  const sizes = [4, 12, 28];
+  const xs = [-78, 0, 78];
+  const meshes = [];
+  const cmds = [];
+  sizes.forEach((sz, i) => {
+    const pos = mkCloud(xs[i]);
+    const id = 'm_pt' + i;
+    meshes.push({
+      id,
+      kind: 'points',
+      positions: b64f32(pos),
+      indices: null,
+      count: pos.length / 3,
+      tris: 0,
+    });
+    cmds.push({
+      id: 'c3_pt' + i,
+      mesh: id,
+      material: { mode: 1, color: '#f0b429', size: sz, glow: 0, opacity: 1 },
+      xform: { matrix: null, frames: null, n: 0 },
+      visible: true,
+      order: i,
+    });
+  });
+
+  return {
+    canvas: { w: W, h: H, bg: '#07070a', dpr: 'auto', clearMode: 'clear' },
+    layers: [],
+    geoms: new Map(),
+    cmds: [],
+    entities: [],
+    scene3d: {
+      bg: '#07070a',
+      lights: false,
+      ambient: 1,
+      camera: null,
+      meshes,
+      cmds,
+      objects: cmds.map((c) => c.id),
+    },
+  };
+}
+
 /* ---------------- 场景注册 ---------------- */
 
 const SCENES = {
@@ -1207,6 +1267,7 @@ const SCENES = {
   scene3d: { build: scene3D, tick: null, hz: 0 },
   shader3d: { build: sceneShader3D, tick: null, hz: 0 },
   shaderdisplace: { build: sceneShaderDisplace, tick: null, hz: 0 },
+  pointsizes: { build: scenePointSizes, tick: null, hz: 0 },
   binding: { build: sceneBinding, tick: null, hz: 0 },
   marks: { build: sceneMarks, tick: null, hz: 0 },
   behavior: { build: sceneBehavior, tick: null, hz: 0 },
