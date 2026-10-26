@@ -98,6 +98,9 @@ namespace Colugo.Components
             p.AddColourParameter("Background", "Bg", "Scene background", GH_ParamAccess.item,
                 Color.FromArgb(7, 7, 10));
             p.AddBooleanParameter("Lights", "Lit", "Built-in three-point light rig", GH_ParamAccess.item, true);
+            p.AddBooleanParameter("Transparent", "A",
+                "Clear the 3D background so the 2D layer shows through. Combine 2D and 3D in one frame",
+                GH_ParamAccess.item, false);
 
             p[1].Optional = true;
         }
@@ -122,12 +125,15 @@ namespace Colugo.Components
             DA.GetData(1, ref cam);
             DA.GetData(2, ref bg);
             DA.GetData(3, ref lights);
+            bool transparent = false;
+            DA.GetData(4, ref transparent);
 
             var scene = new Scene3DDef
             {
                 Camera = cam?.Value,
                 Background = $"#{bg.R:x2}{bg.G:x2}{bg.B:x2}",
                 Lights = lights,
+                    Transparent = transparent,
             };
 
             int tris = 0;

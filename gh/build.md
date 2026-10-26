@@ -1779,3 +1779,29 @@ bloom=0 时拆掉 / 拆掉后键清空）。
 验证：探针 PASS（18 只电池）；`verify-shader` **40/40**（新增 5 项：纹理挂上 / 尺寸对 /
 canvasTex 进图 / 编译无错 / 2D 像素非空）。
 全套：109 + 17 + 15 + 6 + 40 + 11 = **198 项**。
+
+### 0.39.0 S4 收尾：2D + 3D 合成
+
+`Scene 3D` 加第 5 个输入 `Transparent`（默认 false，前面四个索引不变）。
+打开后 3D 画布不清背景，2D 图层从后面透出来 —— 这是"两条管线打通"的另一半。
+
+**三处必须同时改，少一处都不透明：**
+
+1. `WebGPURenderer({ alpha: true })` —— canvas context 本身要允许透明，否则后面全白搭。
+2. `setClearAlpha(0)` + `scene.background = null` —— 不清成黑色。
+3. **后处理的 alpha 用 `base.a` 而不是写死 1** —— 写死的话，只要开 Bloom 就再也透不出 2D 图层。
+
+第 3 条最容易漏：bloom 的 `outputNode` 原本是 `vec4(color, 1)`，看起来无害，
+实际是把整条合成链的 alpha 通道焊死了。这类 bug 只在"同时开透明和 Bloom"时出现。
+
+**时序**：renderer 建好之前 `setClearAlpha` 是空操作，所以 `_initRenderer` 的 init 回调里
+补调一次 `_setConfig(this.config)`（配置通常比 init 先到）。
+
+**mock 又踩了同一个坑**：`scene3d.set` 的 payload 是白名单式拷贝，新加的 `bgAlpha`
+一开始没进列表——和上次 `fx` 一模一样。这个列表已经坑了两次，以后加字段第一件事就是去改它。
+
+安装：0.39.0，4,225,024 bytes，md5 `7F6312C291F52080481FB6C1632E2ED5`。
+包：`dist/colugo-0.39.0-rh8_36-any.yak`，915,316 bytes，md5 `A61A6288182F34C834974B106D5BDB84`。
+
+验证：`verify-shader` **43/43**（新增 3 项：背景为 null / clearAlpha 归零 / 2D 仍在画）。
+全套：109 + 17 + 15 + 6 + 43 + 11 = **201 项**。

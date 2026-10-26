@@ -213,6 +213,12 @@ namespace Colugo.Types
         public double BloomThreshold = 0.55;
         public double BloomRadius = 1.0;
 
+        /// <summary>
+        /// 背景透明。true 时 3D 画布不清背景，2D 图层从后面透出来 ——
+        /// 这是"2D 与 3D 合成"的另一半。默认 false，旧定义行为不变。
+        /// </summary>
+        public bool Transparent = false;
+
         public Scene3DDef Duplicate()
         {
             var s = (Scene3DDef)MemberwiseClone();

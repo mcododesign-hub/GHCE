@@ -143,13 +143,17 @@ export class Scene3D {
 
   _initRenderer() {
     const THREE = this.T;
-    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true });
+    // alpha: true 是"背景可透明"的前提。不设的话 canvas context 是不透明的，
+    // 下面 setClearAlpha(0) 也没用 —— 2D 图层永远透不出来。
+    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
     this.renderer.init().then(() => {
       this.backend = this.renderer.backend?.isWebGLBackend ? 'webgl2' : 'webgpu';
       this._ready = true;      // 后端就绪，第一帧从这里开始
       if (this._size) this.resize(this._size.w, this._size.h);
       this._syncPostFX();      // 配置可能早于 init 到达，这里补建
+      // 背景 alpha 同理：renderer 建好之前 setClearAlpha 是空操作
+      if (this.config) this._setConfig(this.config);
       this._dirty = true;
     }).catch((e) => {
       console.error('[scene3d] renderer init 失败', e);
@@ -275,10 +279,16 @@ export class Scene3D {
     if (!v) return;
     this.config = v;
 
-    if (v.bg) {
+    // S4 合成：bgAlpha = 0 时背景透明，2D 图层从后面透出来。
+    // 背景色仍然照设（不透明时用），只是 alpha 归零时不画它。
+    const bgAlpha = v.bgAlpha == null ? 1 : Number(v.bgAlpha);
+    if (v.bg && bgAlpha > 0) {
       this.scene.background = new this.T.Color(v.bg);
     } else {
       this.scene.background = null;
+    }
+    if (this.renderer && typeof this.renderer.setClearAlpha === 'function') {
+      this.renderer.setClearAlpha(bgAlpha > 0 ? 1 : 0);
     }
 
     this._syncLights(v);
@@ -367,7 +377,8 @@ export class Scene3D {
     }
     const glow = acc.div(taps.length);
 
-    pipeline.outputNode = tsl.vec4(base.rgb.add(glow.mul(bloom)), 1);
+    // alpha 用 base 的，不能写死 1 —— 写死的话开了 bloom 就再也透不出 2D 图层
+    pipeline.outputNode = tsl.vec4(base.rgb.add(glow.mul(bloom)), base.a);
     return { pipeline, render: () => pipeline.render() };
   }
 

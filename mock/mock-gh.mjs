@@ -1337,6 +1337,23 @@ function sceneCanvasTex() {
   };
 }
 
+
+/* ---------------- v0.39：2D + 3D 合成（透明背景）---------------- */
+
+/**
+ * 2D 画洋红块 + 青线，3D 放一个深蓝立方体，背景透明。
+ * 判据：两者必须同时可见 —— 立方体盖在洋红块上，洋红块在立方体周围露出来。
+ */
+function sceneComposite() {
+  const base = sceneCanvasTex();
+  base.scene3d.bgAlpha = 0;                 // 3D 背景透明
+  base.scene3d.cmds[0].material = {
+    mode: 5, color: '#0b1a3a', size: 2, glow: 0, opacity: 1,
+    shader: { v: 1, nodes: [{ id: 'c', op: 'const', v: [0.05, 0.12, 0.35], ty: 'v3' }], out: 'c' },
+  };
+  return base;
+}
+
 /* ---------------- 场景注册 ---------------- */
 
 const SCENES = {
@@ -1352,6 +1369,7 @@ const SCENES = {
   pointsizes: { build: scenePointSizes, tick: null, hz: 0 },
   bloom: { build: sceneBloom, tick: null, hz: 0 },
   canvasex: { build: sceneCanvasTex, tick: null, hz: 0 },
+  composite: { build: sceneComposite, tick: null, hz: 0 },
   binding: { build: sceneBinding, tick: null, hz: 0 },
   marks: { build: sceneMarks, tick: null, hz: 0 },
   behavior: { build: sceneBehavior, tick: null, hz: 0 },
@@ -1444,7 +1462,7 @@ class Session {
       for (const c of s3.cmds) ops.push({ op: 'cmd3d.upsert', id: c.id, value: c });
       ops.push({
         op: 'scene3d.set',
-        value: { bg: s3.bg, lights: s3.lights, ambient: s3.ambient, camera: s3.camera, objects: s3.objects, fx: s3.fx },
+        value: { bg: s3.bg, lights: s3.lights, ambient: s3.ambient, camera: s3.camera, objects: s3.objects, fx: s3.fx, bgAlpha: s3.bgAlpha },
       });
     } else {
       ops.push({ op: 'scene3d.clear' });

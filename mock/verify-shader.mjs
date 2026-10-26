@@ -325,6 +325,47 @@ if (shotT.data) {
   console.log('  screenshot: ' + pt);
 }
 
+/* ---------- S4 合成：透明背景让 2D 透出 ---------- */
+const comp = await ev(`(async () => {
+  const G = window.Colugo;
+  G.selectScene('composite');
+  const t0 = performance.now();
+  while (performance.now() - t0 < 20000) {
+    const S = G.scene3d;
+    if (S && S.scene && S.scene.background === null && S.stats().objects >= 1) break;
+    await new Promise(r => setTimeout(r, 100));
+  }
+  await new Promise(r => setTimeout(r, 600));
+  const S = G.scene3d;
+  return {
+    bgNull: S.scene.background === null,
+    clearAlpha: typeof S.renderer.getClearAlpha === 'function' ? S.renderer.getClearAlpha() : null,
+    objects: S.stats().objects,
+    // 2D 图层此时应该还画着洋红块
+    px2d: (() => {
+      try {
+        const c = G.renderer.canvas;
+        const d = c.getContext('2d').getImageData(700, 450, 1, 1).data;
+        return [d[0], d[1], d[2], d[3]];
+      } catch (e) { return String(e.message); }
+    })(),
+  };
+})()`);
+
+check('透明模式下 3D 不再设背景色', comp.bgNull === true, comp);
+check('renderer 的 clearAlpha 归零（真透明而非黑色）',
+  comp.clearAlpha === null || comp.clearAlpha === 0, comp.clearAlpha);
+check('2D 图层仍在画（合成的前提）',
+  Array.isArray(comp.px2d) && comp.px2d[0] > 200, comp.px2d);
+
+const shotC = await send('Page.captureScreenshot', { format: 'png' });
+if (shotC.data) {
+  const { writeFileSync } = await import('node:fs');
+  const pc = join(tmpdir(), 'colugo-composite.png');
+  writeFileSync(pc, Buffer.from(shotC.data, 'base64'));
+  console.log('  screenshot: ' + pc);
+}
+
 const bad = logs.filter((l) => /^EXC:/.test(l) || /^error:/.test(l));
 check('无控制台错误', bad.length === 0, bad);
 
