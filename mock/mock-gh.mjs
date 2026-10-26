@@ -998,6 +998,60 @@ function sceneBehavior() {
   };
 }
 
+// 64×64 棋盘 PNG（216 字节 base64）：用最小的真图片证明解码链路，而不是塞一张几 MB 的照片
+const CHECKER_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR42u3XoQ0AIAxFwU5SzYiMzQgsUFQNhEuQFZx6+bHmKF9m/W67DwAAAACAFuCVj57uAQAAAAB6ACUGAAAAsAeUGAAAAMAeUGIAAAAAe0CJAQAAAOwBJQYAAACwB5QYAAAA4BvABjgwoOIgZTMsAAAAAElFTkSuQmCC';
+
+/* ---------------- v0.33：图片 / 裁剪 ---------------- */
+
+/**
+ * 图片几何是**单位方块**：位置与尺寸全在矩阵里，与 Mark 的印章同一套语义。
+ * 三张同源图共用一份 geom.upsert —— 这正是 base64 走文档、而不是"每条指令带一张图"的理由。
+ */
+function sceneImage() {
+  const geoms = new Map();
+  const cmds = [];
+
+  geoms.set('g_checker', {
+    kind: 'image',
+    src: 'data:image/png;base64,' + CHECKER_B64,
+    w: 64,
+    h: 64,
+  });
+
+  // 一条圆：作为裁剪模具（页面坐标）
+  const circle = (cx, cy, r, n = 64) => {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2;
+      out.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    return out;
+  };
+  geoms.set('g_clip_circle', { kind: 'polygon', enc: 'f32', coords: b64f32(circle(930, 270, 120)) });
+  geoms.set('g_clip_hole', { kind: 'polygon', enc: 'f32', coords: b64f32(circle(250, 660, 90)) });
+
+  const imgCmd = (id, m, extra) => ({
+    id, geom: 'g_checker', layer: 'ink', order: 0,
+    visible: true, opacity: 1,
+    style: { stroke: { color: '#000', width: 0, alpha: 0 }, fill: { color: null, alpha: 1, rule: 'nonzero' } },
+    transform: { matrix: m, progress: 1 },
+    ...extra,
+  });
+
+  // 1) 原样：300×300，用来证明"解码成功且画出来了"
+  cmds.push(imgCmd('c_img_plain', [300, 0, 0, 300, 120, 120]));
+  // 2) 圆形裁剪：只保留圆内
+  cmds.push(imgCmd('c_img_circle', [300, 0, 0, 300, 780, 120], { clip: { geom: 'g_clip_circle', invert: false } }));
+  // 3) 反相裁剪：整块保留圆外
+  cmds.push(imgCmd('c_img_hole', [260, 0, 0, 260, 120, 530], { clip: { geom: 'g_clip_hole', invert: true } }));
+
+  return {
+    canvas: { w: W, h: H, bg: '#0b0b10', dpr: 'auto' },
+    layers: [{ id: 'ink', name: 'ink', order: 0, opacity: 1, blend: 'source-over' }],
+    geoms, cmds, entities: [],
+  };
+}
+
 /* ---------------- 场景注册 ---------------- */
 
 const SCENES = {
@@ -1011,6 +1065,7 @@ const SCENES = {
   binding: { build: sceneBinding, tick: null, hz: 0 },
   marks: { build: sceneMarks, tick: null, hz: 0 },
   behavior: { build: sceneBehavior, tick: null, hz: 0 },
+  image: { build: sceneImage, tick: null, hz: 0 },
   random: {
     build: sceneRandom, tick: randomTick, hz: 30,
     // 等价于 GH 里 Signal to Float 每帧推的定义

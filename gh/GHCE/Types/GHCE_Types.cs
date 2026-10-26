@@ -197,6 +197,12 @@ namespace GHCE.Types
         /// </summary>
         public double MarkU = -1.0;
 
+        /// <summary>图片几何（v0.33）：与 Path 二选一，二者都为空时这条指令画不出东西。</summary>
+        public ImageDef Image;
+
+        /// <summary>裁剪（v0.33）：页面坐标的模具，不跟着指令的变换走。</summary>
+        public ClipDef Clip;
+
         public StrokeDef Stroke = new StrokeDef();
         public FillDef Fill = new FillDef();
         public double PointSize = 3.0;
@@ -206,6 +212,8 @@ namespace GHCE.Types
             var c = (CommandDef)MemberwiseClone();
             c.Stroke = Stroke.Duplicate();
             c.Fill = Fill.Duplicate();
+            if (Image != null) c.Image = Image.Duplicate();
+            if (Clip != null) c.Clip = Clip.Duplicate();
             if (LayerDef != null) c.LayerDef = LayerDef.Duplicate();
             if (Track != null) c.Track = Track.Duplicate();
             if (Binds != null)
@@ -359,6 +367,42 @@ namespace GHCE.Types
             }
             return d;
         }
+    }
+
+    /// <summary>
+    /// 图片几何（v0.33）。src 是 data URL，自带尺寸信息。
+    ///
+    /// 为什么走 base64 而不是本地路径：快照、重连、独立 HTML 导出、离线回放全部免费，
+    /// 不需要"预览窗能不能读本地文件"这种平台差异。代价是首帧变大。
+    /// </summary>
+    public sealed class ImageDef
+    {
+        public string Id;
+        public string Src;            // data:image/png;base64,…
+        public int W;                 // 像素宽（信息用，布局由矩阵决定）
+        public int H;
+
+        public ImageDef Duplicate() => (ImageDef)MemberwiseClone();
+
+        public string Key() => Id + ":" + W + "x" + H + ":" + (Src == null ? "-" : Src.Length.ToString());
+    }
+
+    /// <summary>裁剪：一条页面坐标的闭合路径，可选反相。</summary>
+    public sealed class ClipDef
+    {
+        public string GeomId;
+        public bool Invert;
+
+        /// <summary>裁剪轮廓本体。指令只带 id，几何由 PatchBuilder 去重后发送。</summary>
+        public PathDef Path;
+
+        public ClipDef Duplicate()
+        {
+            var c = (ClipDef)MemberwiseClone();
+            return c;
+        }
+
+        public string Key() => (GeomId ?? "-") + "|" + (Invert ? "1" : "0");
     }
 
     public sealed class EntityDef
@@ -1108,6 +1152,47 @@ namespace GHCE.Types
         public Param_GHCE_Expr() : base("Expression", "Expr", "Runtime expression", "GHCE", "Data", GH_ParamAccess.item) { }
         public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000ca");
         protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataExpr;
+    }
+
+    /// <summary>图片的 Goo。值里带的是 data URL，不是文件路径 —— 路径只在读取时用一次。</summary>
+    public class GHCE_Image : GH_Goo<ImageDef>
+    {
+        public GHCE_Image() { }
+        public GHCE_Image(ImageDef v) { Value = v; }
+
+        public override bool IsValid => Value != null && !string.IsNullOrEmpty(Value.Src) && Value.Src.StartsWith("data:image/");
+        public override string TypeName => "GHCE Image";
+        public override string TypeDescription => "Embedded image as a data URL";
+
+        public override IGH_Goo Duplicate() =>
+            Value == null ? new GHCE_Image() : new GHCE_Image(Value.Duplicate());
+
+        public override string ToString() =>
+            Value == null ? "<null>" : $"{Value.W}×{Value.H} · {Value.Src.Length / 1024} KB";
+
+        public override bool CastFrom(object source)
+        {
+            if (source is ImageDef d) { Value = d; return true; }
+            if (source is GHCE_Image img) { Value = img.Value; return true; }
+            return false;
+        }
+
+        public override bool CastTo<Q>(ref Q target)
+        {
+            if (typeof(Q).IsAssignableFrom(typeof(ImageDef)) && Value != null)
+            {
+                target = (Q)(object)Value;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    public class Param_GHCE_Image : GH_Param<GHCE_Image>
+    {
+        public Param_GHCE_Image() : base("Image", "Image", "Embedded image", "GHCE", "Data", GH_ParamAccess.item) { }
+        public override Guid ComponentGuid => new Guid("6f1a2b30-1111-4a01-9e01-0000000000cb");
+        protected override System.Drawing.Bitmap Internal_Icon_24x24 => Icons.DataImage;
     }
 
 }

@@ -10,6 +10,40 @@ import {
 
 const DPR_CAP = 2;
 
+/**
+ * 图片解码缓存。
+ *
+ * 为什么按 src 缓存而不是按 geom id：同一张图可以被两条指令引用（比如原图 + 缩小版），
+ * 按 id 缓存会解码两次。数据 URL 本身就是身份。
+ *
+ * 解码是异步的，所以首帧一定画不出来 —— 这不是缺陷，是浏览器的事实。
+ * 加载完成后回调一次 onImageReady，由 main.js 请求重绘；否则第一次渲染就永远停在空白，
+ * 而 patch 早就到了（doc.rev 不变，没人知道该重画）。
+ */
+const imageCache = new Map();
+let onImageReady = null;
+
+export function setImageReadyHandler(fn) {
+  onImageReady = fn;
+}
+
+function imageFor(src) {
+  let entry = imageCache.get(src);
+  if (entry) return entry;
+
+  const img = new Image();
+  entry = { img, ready: false, failed: false };
+  img.onload = () => {
+    entry.ready = true;
+    if (onImageReady) onImageReady();
+  };
+  // 解码失败不抛异常：一个坏图片不该让整个作品停摆，画别的就行
+  img.onerror = () => { entry.failed = true; };
+  img.src = src;
+  imageCache.set(src, entry);
+  return entry;
+}
+
 /** 颜色解析：#RGB / #RRGGBB / #RRGGBBAA / rgb() / rgba() */
 export function parseColor(str, alphaMul = 1) {
   if (!str) return null;
@@ -234,12 +268,39 @@ export class Renderer2D {
       if (cmd.track) u = trackU(cmd.track, doc.time || 0, doc.timeline);
       else if (cmd.morph) u = morphFallbackU(cmd.morph, doc.time || 0);
 
-      const path = geom.kind === 'points'
+      const isImage = geom.kind === 'image';
+      const isPoints = geom.kind === 'points';
+      const path = (isImage || isPoints)
         ? null
         : (cmd.morph ? this._morphPath(cmd, u) : this._pathFor(cmd.geom, geom));
-      if (geom.kind !== 'points' && !path) { skipped++; continue; }
+      if (!isImage && !isPoints && !path) { skipped++; continue; }
 
       g.save();
+
+      // 裁剪（v0.33）：模具用页面坐标，所以在 g.transform 之前落剪。
+      // 反过来写会让裁剪框跟着指令旋转 —— "把图片裁进一个圆"会变成"裁进一个跟着图转的圆"。
+      if (cmd.clip) {
+        const clipGeom = doc.geoms.get(cmd.clip.geom);
+        const clipPath = clipGeom && clipGeom.kind !== 'image'
+          ? this._pathFor(cmd.clip.geom, clipGeom)
+          : null;
+        if (clipPath) {
+          if (cmd.clip.invert) {
+            // 反相 = 整幅画布减去模具，用 even-odd 一次成路径
+            const inv = new Path2D();
+            inv.rect(0, 0, doc.canvas.w, doc.canvas.h);
+            inv.addPath(clipPath);
+            g.clip(inv, 'evenodd');
+          } else {
+            g.clip(clipPath);
+          }
+        } else {
+          skipped++;
+          g.restore();
+          continue;
+        }
+      }
+
       // 绑定求值：只在这一帧的局部变量里生效，不写回 cmd —— 写回去的话
       // 导出、SVG、下一帧的 diff 都会拿到被污染的脏值。
       const ex = cmd.bind ? { t: doc.time || 0, vars: doc.vars } : null;
@@ -282,7 +343,18 @@ export class Renderer2D {
         : cmd.style.stroke;
       const fi = cmd.style.fill;
 
-      if (geom.kind === 'points') {
+      if (isImage) {
+        const entry = imageFor(geom.src);
+        if (entry.ready) {
+          // 几何是单位方块 (0,0)-(1,1)，尺寸与位置全在矩阵里 ——
+          // 这样缩放就是矩阵的线性部分，和 Mark 的印章同一套心智模型。
+          g.imageSmoothingEnabled = true;
+          g.imageSmoothingQuality = 'high';
+          g.drawImage(entry.img, 0, 0, 1, 1);
+        } else {
+          skipped++;
+        }
+      } else if (isPoints) {
         const f = flatCoords(geom);
         const baseCol = st.color || fi.color || '#fff';
         const col = Number.isFinite(boundHue)

@@ -29,6 +29,9 @@ namespace GHCE.Bridge
         int _seq;
         bool _hasState;
 
+        /// <summary>图片 id → 指纹（尺寸 + 载荷长度）。</summary>
+        readonly Dictionary<string, string> _imgKey = new Dictionary<string, string>(StringComparer.Ordinal);
+
         /// <summary>变量 → 初值指纹。初值是"文档属性"，改了才重发。</summary>
         readonly Dictionary<string, string> _varKey = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -59,11 +62,22 @@ namespace GHCE.Bridge
             // ---- 先按引用收集几何（同一份几何被多条指令/多个蓝图共享时只发一次）----
             var pathSet = new List<PathDef>();
             var pathSeen = new HashSet<string>();
+            var imageSet = new List<ImageDef>();
+            var imageSeen = new HashSet<string>();
             foreach (var gc in commands)
             {
                 var c = gc.Value;
-                if (c == null || c.Path == null || string.IsNullOrEmpty(c.Path.Id)) continue;
-                if (pathSeen.Add(c.Path.Id)) pathSet.Add(c.Path);
+                if (c == null) continue;
+
+                if (c.Path != null && !string.IsNullOrEmpty(c.Path.Id) && pathSeen.Add(c.Path.Id))
+                    pathSet.Add(c.Path);
+
+                // 裁剪轮廓不是任何指令的 Path，必须单独收 —— 否则运行时找不到模具
+                if (c.Clip?.Path != null && !string.IsNullOrEmpty(c.Clip.GeomId) && pathSeen.Add(c.Clip.GeomId))
+                    pathSet.Add(c.Clip.Path);
+
+                if (c.Image != null && !string.IsNullOrEmpty(c.Image.Id) && imageSeen.Add(c.Image.Id))
+                    imageSet.Add(c.Image);
             }
             foreach (var ge in entities)
             {
@@ -203,6 +217,36 @@ namespace GHCE.Bridge
                 _geomFp.Remove(old);
             }
 
+            // ---- 图片几何（v0.33）----
+            // src 是 data URL，几 MB 一條；按 ImageDef.Key() 去重，不随每帧重发。
+            var seenImage = new HashSet<string>();
+            foreach (var img in imageSet)
+            {
+                seenImage.Add(img.Id);
+                var key = img.Key();
+                if (!snapshot && _imgKey.TryGetValue(img.Id, out var prevImg) && prevImg == key) continue;
+
+                ops.Add(new Dictionary<string, object>
+                {
+                    ["op"] = "geom.upsert",
+                    ["id"] = img.Id,
+                    ["value"] = new Dictionary<string, object>
+                    {
+                        ["kind"] = "image",
+                        ["src"] = img.Src,
+                        ["w"] = img.W,
+                        ["h"] = img.H,
+                    }
+                });
+                _imgKey[img.Id] = key;
+            }
+            foreach (var old in new List<string>(_imgKey.Keys))
+            {
+                if (seenImage.Contains(old)) continue;
+                ops.Add(new Dictionary<string, object> { ["op"] = "geom.remove", ["id"] = old });
+                _imgKey.Remove(old);
+            }
+
             // ---- 绘图指令 ----
             var seenCmd = new HashSet<string>();
             foreach (var gc in commands)
@@ -219,7 +263,8 @@ namespace GHCE.Bridge
                     + "|" + (c.Matrix == null ? "-" : string.Join(",", c.Matrix.Select(x => x.ToString("0.#####"))))
                     + "|" + TrackKey(c.Track)
                     + "|" + MorphKey(c.Morph)
-                    + "|" + BindKey(c.Binds);
+                    + "|" + BindKey(c.Binds)
+                    + "|" + (c.Clip?.Key() ?? "-");
                 if (!snapshot && _cmdKey.TryGetValue(c.Id, out var prevKey) && prevKey == key) continue;
 
                 // 空字段不写：track / morph / bind 绝大多数指令都没有，
@@ -264,6 +309,15 @@ namespace GHCE.Bridge
                                 ["pivot"] = new[] { c.AnchorX, c.AnchorY }
                             },
                 };
+
+                if (c.Clip != null && !string.IsNullOrEmpty(c.Clip.GeomId))
+                {
+                    payload["clip"] = new Dictionary<string, object>
+                    {
+                        ["geom"] = c.Clip.GeomId,
+                        ["invert"] = c.Clip.Invert,
+                    };
+                }
 
                 var trackPayload = TrackPayload(c.Track);
                 if (trackPayload != null) payload["track"] = trackPayload;

@@ -32,7 +32,9 @@ export class Pointer {
       this.downX = this.x;
       this.downY = this.y;
       this.clicks++;
-      el.setPointerCapture?.(e.pointerId);
+      // 合成事件（测试里的 dispatchEvent）没有活动指针，setPointerCapture 会抛
+      // NotFoundError 并在控制台留一条未捕获异常。捕获是"加分项"，失败不该污染日志。
+      try { el.setPointerCapture?.(e.pointerId); } catch { /* 无活动指针 */ }
     });
     el.addEventListener('pointerup', (e) => {
       move(e);

@@ -15,6 +15,14 @@ export const CLEAR_MODES = ['clear', 'fade', 'none'];
 function normalizeGeom(v) {
   if (!v || typeof v !== 'object') return null;
   const kind = v.kind;
+
+  // 图片（v0.33）：几何就是一个 data URL + 原始像素尺寸。
+  // 不做解码 —— 解码是渲染器的事，文档只保证"这是个合法载荷"。
+  if (kind === 'image') {
+    if (typeof v.src !== 'string' || !v.src.startsWith('data:image/')) return null;
+    return { kind, src: v.src, w: v.w | 0, h: v.h | 0 };
+  }
+
   if (!['polyline', 'polygon', 'points', 'path'].includes(kind)) return null;
   if (kind === 'path') {
     if (!Array.isArray(v.cmds) || !v.cmds.length) return null;
@@ -83,6 +91,11 @@ function normalizeCmd(v) {
     morph: normalizeMorph(v.morph),
     // 运行时表达式绑定（v0.30）：属性名 → AST。绘制时求值，不写回 cmd。
     bind: normalizeBind(v.bind),
+    // 裁剪（v0.33）：{ geom, invert }。geom 是页面坐标的闭合轮廓，
+    // 在指令自身的变换**之前**应用 —— 模具不跟着内容转。
+    clip: v.clip && v.clip.geom
+      ? { geom: String(v.clip.geom), invert: v.clip.invert === true }
+      : null,
   };
 }
 

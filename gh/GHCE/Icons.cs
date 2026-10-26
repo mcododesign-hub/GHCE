@@ -91,6 +91,12 @@ namespace GHCE
         public static Bitmap MarkPath => Get("mark-path", DrawMarkPath);
         public static Bitmap StyleMap => Get("style-map", DrawStyleMap);
 
+        // v0.33 文字 / 图片 / 裁剪
+        public static Bitmap Text => Get("text", DrawText);
+        public static Bitmap Image => Get("image", DrawImageFrame);
+        public static Bitmap DrawImage => Get("draw-image", DrawDrawImage);
+        public static Bitmap Clip => Get("clip", DrawClip);
+
         // v0.32 行为图
         public static Bitmap ReadState => Get("read-state", DrawReadState);
         public static Bitmap WriteState => Get("write-state", DrawWriteState);
@@ -122,6 +128,7 @@ namespace GHCE
         public static Bitmap DataEvent => Get("data-evt", DrawDataEvent);
         public static Bitmap DataSignal => Get("data-sig", DrawDataSignal);
         public static Bitmap DataExpr => Get("data-expr", DrawDataExpr);
+        public static Bitmap DataImage => Get("data-image", DrawDataImage);
 
         static Bitmap Get(string key, Action<Graphics> draw)
         {
@@ -864,6 +871,95 @@ namespace GHCE
                 g.DrawLines(pen, pts);
             }
             Dot(g, 5.5f, 12f, 1.2f, Green);
+        }
+
+        /* ---------------- v0.33：文字 / 图片 / 裁剪 ---------------- */
+
+        // Text：一个衬线 T + 基线 —— "字成了形"
+        static void DrawText(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Ink, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                g.DrawLine(pen, 6f, 6.5f, 18f, 6.5f);
+                g.DrawLine(pen, 12f, 6.5f, 12f, 17.5f);
+            }
+            using (var pen = new Pen(Pink, 1.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+                g.DrawLine(pen, 4.5f, 19.5f, 19.5f, 19.5f);
+        }
+
+        // Image：相框 + 山 + 一点太阳
+        static void DrawImageFrame(Graphics g)
+        {
+            Tile24(g);
+            using (var p = RoundedRect(3f, 5f, 18f, 14f, 2f))
+            using (var pen = new Pen(Ink, 1.3f))
+                g.DrawPath(pen, p);
+            using (var path = new GraphicsPath())
+            using (var b = new SolidBrush(Tint(Ink, 0x70)))
+            {
+                path.AddPolygon(new[]
+                {
+                    new PointF(5f, 17f), new PointF(10f, 10.5f), new PointF(14f, 15f),
+                    new PointF(16.5f, 12.5f), new PointF(19f, 17f),
+                });
+                g.FillPath(b, path);
+            }
+            Dot(g, 8f, 8.6f, 1.3f, Pink);
+        }
+
+        // Draw Image：同一个相框 + 绿色定位角 —— "把它放到页面上"
+        static void DrawDrawImage(Graphics g)
+        {
+            Tile24(g);
+            using (var p = RoundedRect(5f, 7f, 16f, 12f, 2f))
+            using (var pen = new Pen(Ink, 1.3f))
+                g.DrawPath(pen, p);
+            using (var path = new GraphicsPath())
+            using (var b = new SolidBrush(Tint(Ink, 0x60)))
+            {
+                path.AddPolygon(new[]
+                {
+                    new PointF(7f, 17f), new PointF(11f, 11.5f), new PointF(14.5f, 15f),
+                    new PointF(16.5f, 13f), new PointF(19f, 17f),
+                });
+                g.FillPath(b, path);
+            }
+            using (var pen = new Pen(Green, 1.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            {
+                g.DrawLine(pen, 3f, 3f, 7f, 3f);
+                g.DrawLine(pen, 3f, 3f, 3f, 7f);
+            }
+        }
+
+        // Clip：圆与方叠在一起，交集处留一道粉线 —— "模具"
+        static void DrawClip(Graphics g)
+        {
+            Tile24(g);
+            using (var pen = new Pen(Ink, 1.2f))
+                g.DrawEllipse(pen, 4f, 7f, 12f, 12f);
+            using (var pen = new Pen(Tint(Ink, 0x80), 1.2f) { DashPattern = new[] { 1.6f, 1.6f } })
+                g.DrawRectangle(pen, 9f, 4f, 11f, 11f);
+            using (var pen = new Pen(Pink, 1.5f))
+                g.DrawArc(pen, 8f, 8f, 7f, 7f, 0, 360);
+        }
+
+        // Data: Image —— 卡面里一座山
+        static void DrawDataImage(Graphics g)
+        {
+            DataTile(g);
+            DataFrame(g, Pink);
+            using (var path = new GraphicsPath())
+            using (var b = new SolidBrush(Tint(Ink, 0x9A)))
+            {
+                path.AddPolygon(new[]
+                {
+                    new PointF(5.5f, 17f), new PointF(9.5f, 11f), new PointF(13f, 15f),
+                    new PointF(15.5f, 12.5f), new PointF(18.5f, 17f),
+                });
+                g.FillPath(b, path);
+            }
+            Dot(g, 15.5f, 9f, 1.2f, Green);
         }
 
         /* ---------------- v0.32：行为图四只 ---------------- */

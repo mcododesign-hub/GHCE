@@ -1,6 +1,6 @@
 // main.js — 运行时装配：文档状态 → 渲染器 → 桥
 import { Doc } from './doc.js';
-import { Renderer2D, recolor } from './renderer2d.js';
+import { Renderer2D, recolor, setImageReadyHandler } from './renderer2d.js';
 import { BridgeClient } from './bridge-client.js';
 import { EntitySystem } from './entity.js';
 import { Clock } from './clock.js';
@@ -14,7 +14,7 @@ import { evalExpr } from './expr.js';
 import { Scene3D } from './scene3d.js';
 import {
   exportPngSequence, exportStandalone, exportVideo,
-  trackDuration, pickVideoMime, videoExt,
+  trackDuration, pickVideoMime, videoExt, serializeDoc,
 } from './exporter.js';
 
 const WS_URL = new URLSearchParams(location.search).get('ws') || 'ws://127.0.0.1:8777/ghce';
@@ -394,9 +394,12 @@ applyHarnessMode(false);   // 默认按"接真 GH"处理，收到 mock 的 welco
 requestAnimationFrame(loop);
 
 // 调试与自动化验收入口
+// 图片是异步解码的：load 完成时请求一次重绘，否则首帧空白会一直空白下去
+setImageReadyHandler(() => requestDraw());
+
 window.GHCE = {
   doc, renderer, scene3d, client, entities, clock, pointer, tweens, events, toSVG, selectScene, requestDraw, resolveMorph,
-  signals, signalValue, evalExpr, recolor,
+  signals, signalValue, evalExpr, recolor, serializeDoc,
 
   // v0.17 导出（验收直接调这几个，不用去点按钮）
   exportPngSequence, exportStandalone, exportVideo, trackDuration, pickVideoMime, videoExt,

@@ -207,11 +207,23 @@ check('两种导出尺寸一致', exp.alpha.w === exp.opaque.w && exp.alpha.h ==
   { alpha: [exp.alpha.w, exp.alpha.h], opaque: [exp.opaque.w, exp.opaque.h] });
 
 /* 6. 控制台无错误 */
+// WebSocket 的失败重连是浏览器自己写的网络日志，不是我们的代码在报错：
+// 客户端本来就会重试（bridge-client 有退避），而"到底连上没有"由前面
+// 「WS 已连接」那条断言负责。把它算进"控制台错误"会让套件偶发失败。
+const wsRetry = (e) => e.method === 'Log.entryAdded'
+  && /WebSocket connection to .* failed/.test(e.params.entry?.text || '');
+
 const errs = cdp.events.filter((e) =>
-  (e.method === 'Runtime.consoleAPICalled' && e.params.type === 'error') ||
-  e.method === 'Runtime.exceptionThrown' ||
-  (e.method === 'Log.entryAdded' && e.params.entry.level === 'error')
+  !wsRetry(e) && (
+    (e.method === 'Runtime.consoleAPICalled' && e.params.type === 'error') ||
+    e.method === 'Runtime.exceptionThrown' ||
+    (e.method === 'Log.entryAdded' && e.params.entry.level === 'error')
+  )
 );
+if (errs.length) console.log('  errs:', JSON.stringify(errs.map((e) => ({
+  m: e.method, ts: e.params && e.params.timestamp,
+  t: (e.params && (e.params.entry?.text || e.params.exceptionDetails?.exception?.description || e.params.type)) || '',
+})).slice(0, 6)));
 check('无控制台错误 / 未捕获异常', errs.length === 0,
   errs.slice(0, 3).map((e) => e.params.entry?.text || e.params.exceptionDetails?.text || e.params.args?.[0]?.value));
 
@@ -999,6 +1011,92 @@ await cdp.eval(`(() => {
 await sleep(150);
 const f87 = await shot('behavior');
 console.log('  screenshot:', f87);
+
+/* 10.9 图片 + 裁剪（v0.33）
+ *
+ * 三件事：
+ *   1. 图片几何真的到了运行时，并且**三条指令共用一份 base64**；
+ *   2. 解码完成后画得出来（这是异步的，所以第一帧空白不是 bug）；
+ *   3. 裁剪在指令变换之前生效：圆内是图、圆外是底，反相则相反。 */
+await cdp.eval("window.GHCE.selectScene('image')");
+await sleep(1500);   // 等解码：Image.onload 之后会自己 requestDraw
+
+const imgState = await cdp.eval(`(() => {
+  const G = window.GHCE;
+  const g = G.doc.geoms.get('g_checker');
+  const cmds = [...G.doc.cmds.values()].filter((c) => c.geom === 'g_checker');
+  return {
+    kind: g && g.kind,
+    srcHead: g ? g.src.slice(0, 22) : null,
+    bytes: g ? g.src.length : 0,
+    nat: g ? [g.w, g.h] : null,
+    cmds: cmds.length,
+    clips: cmds.map((c) => (c.clip ? c.clip.geom + (c.clip.invert ? '|inv' : '') : 'none')),
+    imageGeoms: [...G.doc.geoms.values()].filter((x) => x.kind === 'image').length,
+    lastBytes: G.client.metrics.lastBytes,
+  };
+})()`);
+
+check('图片几何到达运行时（data URL + 原始尺寸）',
+  imgState.kind === 'image' && imgState.srcHead.startsWith('data:image/png') && imgState.nat[0] === 64,
+  { kind: imgState.kind, head: imgState.srcHead, nat: imgState.nat });
+check('三条指令共用一份图片几何（base64 不重复进 patch）',
+  imgState.cmds === 3 && imgState.imageGeoms === 1, { cmds: imgState.cmds, geoms: imgState.imageGeoms });
+check('裁剪随指令到达，含反相标记',
+  imgState.clips.includes('g_clip_circle') && imgState.clips.includes('g_clip_hole|inv'),
+  imgState.clips);
+
+/** 取页面坐标上的一点，返回像素亮度与最大通道 */
+const pixelAt = (x, y) => cdp.eval(`(() => {
+  const G = window.GHCE, cv = G.renderer.canvas;
+  const k = cv.width / G.doc.canvas.w;
+  const d = cv.getContext('2d').getImageData(Math.round(${x} * k), Math.round(${y} * k), 1, 1).data;
+  return { r: d[0], g: d[1], b: d[2], a: d[3] };
+})()`);
+
+const warm = (p) => p.r > 100 && p.r > p.b + 30;   // 棋盘暖色 (240,120,40)
+const dark = (p) => Math.max(p.r, p.g, p.b) < 60;  // 底色 #0b0b10
+
+const plain = await pixelAt(300, 300);
+check('图片解码后真的画出来了（不是一张空图）', warm(plain), plain);
+
+const inCircle = await pixelAt(930, 270);
+const outCircle = await pixelAt(830, 170);
+check('圆内裁剪：模具内部保留', warm(inCircle), inCircle);
+check('圆内裁剪：模具外部被切掉', dark(outCircle), outCircle);
+
+// 反相裁剪的取样点必须落在棋格中心。64px 的棋盘铺到 260px 上，8px 格变成 32.5px，
+// 原先取的 (150,560) 落在图素 (7.4,7.4) —— 离格边只有 0.6 个图素，双线性插值把
+// 邻格深色 (40,40,40) 按 85% 混进来，240,120,40 被稀释成 69,46,40，看着像裁剪漏了。
+// (234,773) = 图素 (28.1,59.8)，格心，距圆心 114 > r=90；(136,579) 是另一侧的格心。
+const inHole = await pixelAt(250, 660);
+const outHoleA = await pixelAt(234, 773);
+const outHoleB = await pixelAt(136, 579);
+const outHole = outHoleA.r >= outHoleB.r ? outHoleA : outHoleB;
+check('反相裁剪：模具内部被挖空', dark(inHole), inHole);
+check('反相裁剪：模具外部保留', warm(outHole), { a: outHoleA, b: outHoleB });
+
+// SVG 导出：图片走 <image>，裁剪走 <clipPath>
+const svgOut = await cdp.eval(`(() => {
+  const r = window.GHCE.toSVG(window.GHCE.doc);
+  return { ok: r.svg.indexOf('<image') >= 0, clip: r.svg.indexOf('<clipPath') >= 0,
+           warned: r.report.warnings.length, len: r.svg.length };
+})()`);
+check('SVG 导出：图片内嵌、裁剪转 clipPath',
+  svgOut.ok && svgOut.clip, svgOut);
+
+// 独立 HTML 导出：图片必须跟着 doc 一起走，否则导出的作品是空白的
+const docOps = await cdp.eval(`(() => {
+  const snap = window.GHCE.serializeDoc(window.GHCE.doc, window.GHCE.entities);
+  const ops = snap.patch.ops;
+  const img = ops.find((o) => o.op === 'geom.upsert' && o.value && o.value.kind === 'image');
+  const cmd = ops.find((o) => o.op === 'cmd.upsert' && o.value && o.value.clip);
+  return { image: !!img, src: img ? img.value.src.slice(0, 22) : null, clip: !!cmd };
+})()`);
+check('独立 HTML 导出带上图片与裁剪', docOps.image && docOps.clip, docOps);
+
+const f88 = await shot('image');
+console.log('  screenshot:', f88);
 
 /* 11. 四档视口：量横向溢出与是否被裁 */
 const VIEWPORTS = [

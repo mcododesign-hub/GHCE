@@ -32,6 +32,8 @@ function serializeCmd(c) {
       ? { matrix: c.transform.matrix, progress: 1 }
       : { progress: 1 },
     track: null,
+    // 裁剪跟着指令走：它描述"这条指令被裁成什么样"，不是图层属性
+    clip: c.clip ? { geom: c.clip.geom, invert: c.clip.invert } : null,
   };
   if (c.track) {
     out.track = {
@@ -66,7 +68,9 @@ export function serializeDoc(doc, entities) {
       op: 'geom.upsert', id,
       value: g.kind === 'path'
         ? { kind: 'path', cmds: g.cmds }
-        : { kind: g.kind, enc: 'f32', coords: encodeF32(g.coords) },
+        : g.kind === 'image'
+          ? { kind: 'image', src: g.src, w: g.w, h: g.h }
+          : { kind: g.kind, enc: 'f32', coords: encodeF32(g.coords) },
     });
   }
   for (const c of doc.cmds.values()) ops.push({ op: 'cmd.upsert', value: serializeCmd(c) });

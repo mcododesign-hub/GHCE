@@ -58,6 +58,8 @@ class Probe
         _signal = args != null && args.Contains("--signal");
         _clock = args != null && args.Contains("--clock");
         AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+        // 这条必须在 AssemblyResolve 之后：它要解析 RhinoCommon
+        if (args != null && args.Contains("--text-api")) { TextApi(); return 0; }
         return Run();
     }
 
@@ -644,6 +646,9 @@ class Probe
 
             // ---------- v0.32 状态程序 → patch ----------
             fail += TestEntityProgram();
+
+            // ---------- v0.33 文字 / 图片 / 裁剪 → patch ----------
+            fail += TestComposition();
         }
         catch (Exception ex)
         {
@@ -1127,6 +1132,164 @@ class Probe
 
         System.IO.File.WriteAllText(
             System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-entity-program.json"), json);
+        return fail;
+    }
+
+    /// <summary>--text-api：打一份 TextEntity 的可用接口，用来定 Text 电池怎么转曲线。</summary>
+    static void TextApi()
+    {
+        var t = typeof(Rhino.Geometry.Curve).Assembly.GetType("Rhino.Geometry.TextEntity");
+        if (t == null) { Console.WriteLine("TextEntity not found"); return; }
+        Console.WriteLine("type: " + t.FullName);
+
+        Console.WriteLine("static:");
+        foreach (var m in t.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+        {
+            if (m.Name.IndexOf("Create", StringComparison.Ordinal) < 0 &&
+                m.Name.IndexOf("Curve", StringComparison.Ordinal) < 0 &&
+                m.Name.IndexOf("Explode", StringComparison.Ordinal) < 0) continue;
+            Console.WriteLine("  " + m.Name + "(" + string.Join(", ", m.GetParameters().Select(x => x.ParameterType.Name + " " + x.Name)) + ")");
+        }
+
+        Console.WriteLine("instance:");
+        foreach (var m in t.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        {
+            if (m.Name.IndexOf("Curve", StringComparison.Ordinal) < 0 &&
+                m.Name.IndexOf("Explode", StringComparison.Ordinal) < 0 &&
+                m.Name.IndexOf("Duplicate", StringComparison.Ordinal) < 0) continue;
+            Console.WriteLine("  " + m.Name + "(" + string.Join(", ", m.GetParameters().Select(x => x.ParameterType.Name + " " + x.Name)) + ")");
+        }
+
+        // DimensionStyle：文字的高度与字体从哪里设
+        var ds = typeof(Rhino.Geometry.Curve).Assembly.GetType("Rhino.DocObjects.DimensionStyle")
+                 ?? typeof(Rhino.Geometry.Curve).Assembly.GetType("Rhino.Geometry.DimensionStyle");
+        if (ds != null)
+        {
+            Console.WriteLine("DimensionStyle ctors:");
+            foreach (var c in ds.GetConstructors())
+                Console.WriteLine("  .ctor(" + string.Join(", ", c.GetParameters().Select(x => x.ParameterType.Name + " " + x.Name)) + ")");
+            Console.WriteLine("DimensionStyle members:");
+            foreach (var m in ds.GetMembers(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+            {
+                if (m.Name.IndexOf("Font", StringComparison.Ordinal) < 0 &&
+                    m.Name.IndexOf("Text", StringComparison.Ordinal) < 0 &&
+                    m.Name.IndexOf("Height", StringComparison.Ordinal) < 0) continue;
+                if (m.MemberType != System.Reflection.MemberTypes.Property) continue;
+                var pi = (System.Reflection.PropertyInfo)m;
+                Console.WriteLine($"  {pi.PropertyType.Name} {pi.Name} canWrite={pi.CanWrite}");
+            }
+        }
+
+        // Rhino.DocObjects.Font：怎么从字体名构造
+        var fnt = typeof(Rhino.Geometry.Curve).Assembly.GetType("Rhino.DocObjects.Font");
+        if (fnt != null)
+        {
+            Console.WriteLine("Font ctors:");
+            foreach (var c in fnt.GetConstructors())
+                Console.WriteLine("  .ctor(" + string.Join(", ", c.GetParameters().Select(x => x.ParameterType.Name + " " + x.Name)) + ")");
+        }
+    }
+
+    // ================= v0.33 文字 / 图片 / 裁剪 =================
+
+    const string TINY_PNG =
+        "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAaUlEQVR42u3XoQ0AIAxFwU5SzYiMzQgsUFQNhEuQFZx6+bHmKF9m/W67DwAAAACAFuCVj57uAQAAAAB6ACUGAAAAsAeUGAAAAMAeUGIAAAAAe0CJAQAAAOwBJQYAAACwB5QYAAAA4BvABjgwoOIgZTMsAAAAAElFTkSuQmCC";
+
+    /// <summary>
+    /// 图片与裁剪进协议。两件事最容易在某处断掉：
+    ///   1. 图片几何必须自己发一次 geom.upsert（它不属于任何 Path）；
+    ///   2. 裁剪轮廓也必须单独发 —— 否则运行时拿不到模具，clip 变成静默无效。
+    /// </summary>
+    static int TestComposition()
+    {
+        int fail = 0;
+
+        // --- 四只电池在不在、端口数是否守规矩 ---
+        var expected = new (string type, string name, int ins, int outs)[]
+        {
+            ("GHCE.Components.TextComponent", "Text", 6, 2),
+            ("GHCE.Components.ImageComponent", "Image", 2, 2),
+            ("GHCE.Components.DrawImageComponent", "Draw Image", 6, 2),
+            ("GHCE.Components.ClipComponent", "Clip", 3, 2),
+        };
+        foreach (var e in expected)
+        {
+            var t = typeof(GHCE.Components.TextComponent).Assembly.GetType(e.type);
+            bool ok = t != null;
+            int ins = 0, outs = 0;
+            string shown = "missing";
+            if (ok)
+            {
+                var inst = (Grasshopper.Kernel.GH_Component)Activator.CreateInstance(t);
+                ins = inst.Params.Input.Count;
+                outs = inst.Params.Output.Count;
+                shown = inst.Name;
+                ok = shown == e.name && ins == e.ins && outs == e.outs && ins <= 6;
+            }
+            Console.WriteLine($"  battery {e.name,-12} ok={ok}  in={ins} out={outs}");
+            if (!ok) fail++;
+        }
+
+        // --- patch：图片几何 + 裁剪 ---
+        var img = new GHCE.Types.ImageDef
+        {
+            Id = "g_probe_img",
+            Src = "data:image/png;base64," + TINY_PNG,
+            W = 64,
+            H = 64,
+        };
+        var clipPath = new GHCE.Types.PathDef
+        {
+            Id = "g_probe_clip",
+            Closed = true,
+            XY = new double[] { 0, 0, 100, 0, 100, 100, 0, 100, 0, 0 },
+        };
+        var def = new GHCE.Types.CommandDef
+        {
+            Id = "c_probe_img",
+            GeomId = img.Id,
+            Image = img,
+            Layer = "main",
+            Order = 0,
+            Matrix = new[] { 200.0, 0, 0, 200, 50, 60 },
+            Clip = new GHCE.Types.ClipDef { GeomId = clipPath.Id, Invert = true, Path = clipPath },
+        };
+
+        var cmdList = new System.Collections.Generic.List<GHCE.Types.GHCE_Command>
+        {
+            new GHCE.Types.GHCE_Command(def),
+        };
+        var canvas = new GHCE.Types.CanvasDef { W = 1440, H = 900, Bg = "#000000" };
+        var json = new GHCE.Bridge.PatchBuilder().Build(canvas, cmdList, null, null, out var summary);
+        var flat = json == null ? "" : json.Replace(" ", "");
+
+        bool hasImageGeom = flat.Contains("\"kind\":\"image\"") && flat.Contains("\"id\":\"g_probe_img\"");
+        bool hasClipGeom = flat.Contains("\"id\":\"g_probe_clip\"");
+        bool hasClipField = flat.Contains("\"clip\":{\"geom\":\"g_probe_clip\",\"invert\":true}");
+        bool hasMatrix = flat.Contains("\"matrix\":[200,0,0,200,50,60]");
+        bool oneEach = Count(json, "geom.upsert") == 2;
+
+        Console.WriteLine($"  composition patch: image={hasImageGeom} clipGeom={hasClipGeom} clipField={hasClipField} matrix={hasMatrix} geoms={Count(json, "geom.upsert")}  ({summary})");
+        if (!hasImageGeom) { fail++; Console.WriteLine("  FAIL: 图片几何没有单独发 geom.upsert"); }
+        if (!hasClipGeom) { fail++; Console.WriteLine("  FAIL: 裁剪轮廓没有进 patch（运行时拿不到模具）"); }
+        if (!hasClipField) { fail++; Console.WriteLine("  FAIL: cmd 上没有 clip 字段"); }
+        if (!hasMatrix) { fail++; Console.WriteLine("  FAIL: 图片矩阵没进协议"); }
+        if (!oneEach) { fail++; Console.WriteLine("  FAIL: 几何条数不对（应为图片 + 裁剪轮廓各一条）"); }
+
+        // 同一张图被两条指令引用时只能发一次
+        var second = def.Duplicate();
+        second.Id = "c_probe_img2";
+        second.Clip = null;
+        cmdList.Add(new GHCE.Types.GHCE_Command(second));
+        var json2 = new GHCE.Bridge.PatchBuilder()
+            .Build(canvas, cmdList, null, null, out _)
+            .Replace(" ", "");
+        int imgGeoms = Count(json2, "\"kind\":\"image\"");
+        Console.WriteLine($"  image dedupe: geoms(kind=image)={imgGeoms}");
+        if (imgGeoms != 1) { fail++; Console.WriteLine("  FAIL: 图片几何按指令重复发送了"); }
+
+        System.IO.File.WriteAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ghce-composition.json"), json);
         return fail;
     }
 
